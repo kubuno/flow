@@ -1,0 +1,48 @@
+# ─── Kubuno Flow — Configuration ──────────────────────────────────────────────
+# Copiez ce fichier en config.toml et adaptez les valeurs.
+# Les variables d'environnement préfixées KF__ surchargent ce fichier.
+# Exemple : KF__SERVER__PORT=3118
+
+[server]
+host = "127.0.0.1"
+port = 3118
+
+[core]
+# URL du core Kubuno (enregistrement + proxy sortant)
+url             = "http://127.0.0.1:8080"
+# Secret partagé — doit correspondre à server.internal_secret dans le core
+internal_secret = "change_me"
+
+# ── Base de données ───────────────────────────────────────────────────────────
+# Les paramètres de connexion sont injectés par le superviseur Kubuno via
+# KUBUNO_DB_HOST / KUBUNO_DB_PORT / KUBUNO_DB_USER / KUBUNO_DB_PASSWORD / KUBUNO_DB_NAME.
+
+[runtime]
+# Nombre de workers Tokio qui consomment la file de jobs
+worker_count           = 4
+# Timeout global d'une exécution de workflow (secondes)
+execution_timeout_secs = 3600
+# Timeout par nœud (secondes)
+node_timeout_secs      = 60
+# Tentatives max par job (retry)
+max_retries            = 3
+# Délai de base du backoff exponentiel (millisecondes)
+retry_backoff_ms       = 1000
+# Nombre d'exécutions conservées dans l'historique par workflow
+max_execution_history  = 500
+
+[queue]
+# Intervalle de polling de la file de jobs (millisecondes)
+poll_interval_ms = 500
+# Nombre de jobs réclamés par tick
+batch_size       = 10
+
+[code_node]
+# Timeout du nœud Code (QuickJS), secondes
+timeout_secs    = 30
+# Limite mémoire du nœud Code (Mo)
+memory_limit_mb = 64
+
+[logging]
+level  = "info"
+format = "pretty"
