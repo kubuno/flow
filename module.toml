@@ -1,0 +1,45 @@
+[module]
+id           = "flow"
+display_name = "Flow"
+version      = "0.1.0"
+description  = "Orchestrateur de workflows visuels — automatisation no-code, connecteurs natifs Kubuno"
+author       = "Kubuno Contributors"
+license      = "AGPL-3.0"
+runtime      = "rust"
+settings_path = "/flow/settings"
+
+[process]
+entrypoint = "kubuno-flow"
+args       = []
+
+[server]
+host = "127.0.0.1"
+port = 3118
+
+[routes]
+patterns = [
+    { method = "*", path = "/*" },
+]
+
+[[sidebar_items]]
+id       = "flow"
+label    = "Flow"
+icon     = "Workflow"
+path     = "/flow"
+position = 60
+protected_folder = "Flow"
+section  = "main"
+
+[events]
+subscribed = [
+    "UserDeleted",
+    "FormSubmitted",
+    "MessageSent",
+    "ContactUpdated",
+    "FileUploaded",
+    "EventCreated",
+]
+publishes = [
+    "WorkflowExecuted",
+    "WorkflowFailed",
+]
