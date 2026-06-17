@@ -98,6 +98,7 @@ fn convert_n8n(body: &Value) -> WorkflowDefinition {
                 name: Some(name),
                 position: NodePosition { x, y },
                 config: n.get("parameters").cloned().unwrap_or(json!({})),
+                settings: Default::default(),
             });
         }
     }

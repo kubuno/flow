@@ -13,6 +13,32 @@ pub struct NodePosition {
     pub y: f64,
 }
 
+/// Réglages d'exécution par nœud (gestion d'erreur & retry), façon n8n.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NodeSettings {
+    /// "stop" (défaut) → l'erreur arrête le workflow ; "continue" → poursuit avec `{ error }`.
+    #[serde(default)]
+    pub on_error: Option<String>,
+    /// Nombre de tentatives supplémentaires en cas d'échec (borné côté executor).
+    #[serde(default)]
+    pub retry_max: Option<u32>,
+    /// Délai entre deux tentatives (ms).
+    #[serde(default)]
+    pub retry_delay_ms: Option<u64>,
+    /// Nœud désactivé : ignoré à l'exécution (l'entrée passe telle quelle vers la sortie).
+    #[serde(default)]
+    pub disabled: bool,
+    /// Note libre attachée au nœud (documentation, affichée en infobulle).
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+impl NodeSettings {
+    pub fn continues_on_error(&self) -> bool {
+        self.on_error.as_deref() == Some("continue")
+    }
+}
+
 /// Un nœud du workflow.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowNode {
@@ -26,6 +52,9 @@ pub struct WorkflowNode {
     pub position: NodePosition,
     #[serde(default)]
     pub config: Value,
+    /// Réglages d'erreur/retry (optionnels).
+    #[serde(default)]
+    pub settings: NodeSettings,
 }
 
 /// Une arête reliant la sortie d'un nœud à l'entrée d'un autre.
