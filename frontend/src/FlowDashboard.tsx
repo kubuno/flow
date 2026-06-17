@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { format } from 'date-fns'
-import { Plus, Workflow as WorkflowIcon, Copy, Trash2, ExternalLink, Upload } from 'lucide-react'
+import { Plus, Workflow as WorkflowIcon, Copy, Trash2, ExternalLink, Upload, LayoutTemplate } from 'lucide-react'
 import { Button } from '@ui'
 import type { StartPageRecentItem, MenuItem } from '@ui'
 import { ModuleStartPage } from '@kubuno/drive'
@@ -10,6 +10,8 @@ import type { FileItem } from '@kubuno/drive'
 import { getDateLocale } from '@kubuno/sdk'
 import { flowApi } from './api'
 import { parseN8n, parseMake, parseExternalWorkflow } from './flowImport'
+import TemplatesModal from './TemplatesModal'
+import type { WorkflowTemplate } from './templates'
 import type { Workflow } from './types'
 
 export default function FlowDashboard() {
@@ -17,6 +19,7 @@ export default function FlowDashboard() {
   const navigate = useNavigate()
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [creating, setCreating] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
 
   const load = () => {
     flowApi.list().then(setWorkflows).catch(() => setWorkflows([]))
@@ -29,6 +32,14 @@ export default function FlowDashboard() {
       const wf = await flowApi.create({ name: t('new_workflow') })
       navigate(`/flow/${wf.id}`)
     } catch { setCreating(false) }
+  }
+
+  const createFromTemplate = async (tpl: WorkflowTemplate) => {
+    setCreating(true)
+    try {
+      const wf = await flowApi.create({ name: tpl.name, definition: tpl.definition })
+      navigate(`/flow/${wf.id}`)
+    } catch { setCreating(false); setShowTemplates(false) }
   }
 
   // ── Import n8n / Make ────────────────────────────────────────────────────────
@@ -88,6 +99,7 @@ export default function FlowDashboard() {
   }))
 
   return (
+    <>
     <ModuleStartPage
       recentTitle={t('recent', { defaultValue: 'Récents' })}
       recentItems={recentItems}
@@ -108,11 +120,18 @@ export default function FlowDashboard() {
             <Button icon={<Plus size={15} />} onClick={create} loading={creating || importing}>
               {t('new_workflow')}
             </Button>
+            <Button variant="secondary" icon={<LayoutTemplate size={15} />} onClick={() => setShowTemplates(true)}>
+              {t('templates', { defaultValue: 'Modèles' })}
+            </Button>
             {importErr && <span className="text-xs text-danger">{importErr}</span>}
             <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={onImportFile} />
           </div>
         ),
       }}
     />
+    {showTemplates && (
+      <TemplatesModal busy={creating} onClose={() => setShowTemplates(false)} onPick={createFromTemplate} />
+    )}
+    </>
   )
 }

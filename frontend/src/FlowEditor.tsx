@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { useDebouncedAutosave, prompt, useAuthStore } from '@kubuno/sdk'
-import { Plus, Play, Save, Power, History, Workflow as WorkflowIcon, Loader2 } from 'lucide-react'
+import { Plus, Play, Save, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound } from 'lucide-react'
 import { WorkspaceShell, WORKSPACE_LIGHT } from '@kubuno/sdk'
 import { flowApi, streamExecution } from './api'
-import type { NodeLog, NodeMeta, Workflow, WorkflowDefinition, WorkflowEdge, WorkflowNode } from './types'
+import type { CredentialMeta, ExprHelp, NodeLog, NodeMeta, StickyNote, Workflow, WorkflowDefinition, WorkflowEdge, WorkflowNode } from './types'
 import FlowCanvas, { NODE_W } from './FlowCanvas'
 import NodePicker from './NodePicker'
 import NodeConfigPanel from './NodeConfigPanel'
+import CredentialsManager from './CredentialsManager'
 import ExecutionHistory from './ExecutionHistory'
 import { useCollab } from './collab/collabProvider'
 import { userColor, PresenceAvatars } from './collab/presence'
@@ -34,7 +35,12 @@ export default function FlowEditor() {
   const [wf, setWf] = useState<Workflow | null>(null)
   const [nodes, setNodes] = useState<WorkflowNode[]>([])
   const [edges, setEdges] = useState<WorkflowEdge[]>([])
+  const [notes, setNotes] = useState<StickyNote[]>([])
+  const [, forceUndoTick] = useState(0)
   const [catalog, setCatalog] = useState<NodeMeta[]>([])
+  const [exprHelp, setExprHelp] = useState<ExprHelp | undefined>(undefined)
+  const [credentials, setCredentials] = useState<CredentialMeta[]>([])
+  const [credsManager, setCredsManager] = useState<{ open: boolean; preset?: string }>({ open: false })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showPicker, setShowPicker] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -57,6 +63,10 @@ export default function FlowEditor() {
   const awareness = useMemo(() => new Awareness(doc), [doc])
   const yNodes = useMemo(() => doc.getMap<WorkflowNode>('nodes'), [doc])
   const yEdges = useMemo(() => doc.getMap<WorkflowEdge>('edges'), [doc])
+  const yNotes = useMemo(() => doc.getMap<StickyNote>('notes'), [doc])
+  // Annuler/refaire : l'UndoManager pilote les Y.Map (modèle collab → undo gratuit).
+  const undoMgr = useMemo(() => new Y.UndoManager([yNodes, yEdges, yNotes], { captureTimeout: 350 }), [yNodes, yEdges, yNotes])
+  useEffect(() => () => { undoMgr.destroy() }, [undoMgr])
   useEffect(() => () => awareness.destroy(), [awareness])
 
   const defRef    = useRef<WorkflowDefinition | null>(null)
@@ -75,18 +85,27 @@ export default function FlowEditor() {
     doc.transact(() => {
       for (const n of def.nodes) yNodes.set(n.id, n)
       for (const e of def.edges) yEdges.set(e.id, e)
+      for (const note of def.notes ?? []) yNotes.set(note.id, note)
     })
-  }, [doc, yNodes, yEdges])
+  }, [doc, yNodes, yEdges, yNotes])
 
   // Observateur Y.Map → état React (rendu).
   useEffect(() => {
     const sync = () => {
       setNodes(Array.from(yNodes.values()))
       setEdges(Array.from(yEdges.values()))
+      setNotes(Array.from(yNotes.values()))
     }
-    yNodes.observe(sync); yEdges.observe(sync); sync()
-    return () => { yNodes.unobserve(sync); yEdges.unobserve(sync) }
-  }, [yNodes, yEdges])
+    yNodes.observe(sync); yEdges.observe(sync); yNotes.observe(sync); sync()
+    return () => { yNodes.unobserve(sync); yEdges.unobserve(sync); yNotes.unobserve(sync) }
+  }, [yNodes, yEdges, yNotes])
+
+  // Rafraîchir l'état des boutons annuler/refaire quand la pile change.
+  useEffect(() => {
+    const upd = () => forceUndoTick(x => x + 1)
+    undoMgr.on('stack-item-added', upd); undoMgr.on('stack-item-popped', upd)
+    return () => { undoMgr.off('stack-item-added', upd); undoMgr.off('stack-item-popped', upd) }
+  }, [undoMgr])
 
   useCollab(`flow-workflow:${id}`, doc, !!id, {
     awareness,
@@ -95,10 +114,12 @@ export default function FlowEditor() {
 
   useEffect(() => {
     let alive = true
+    flowApi.expressionHelp().then(h => { if (alive) setExprHelp(h) }).catch(() => { /* ignore */ })
+    flowApi.credentials().then(c => { if (alive) setCredentials(c) }).catch(() => { /* ignore */ })
     Promise.all([flowApi.get(id), flowApi.nodeCatalog()]).then(([w, cat]) => {
       if (!alive) return
       setWf(w); setTitleDraft(w.name)
-      defRef.current = { nodes: w.definition?.nodes ?? [], edges: w.definition?.edges ?? [] }
+      defRef.current = { nodes: w.definition?.nodes ?? [], edges: w.definition?.edges ?? [], notes: w.definition?.notes ?? [] }
       setCatalog(cat)
       seedIfNeeded()
       // Repli hors-ligne : si la collab n'a pas synchronisé sous 2,5 s, amorcer
@@ -139,16 +160,78 @@ export default function FlowEditor() {
     for (const e of [...yEdges.values()]) if (ids.has(e.source) || ids.has(e.target)) yEdges.delete(e.id)
   }, [yEdges])
 
+  // Placement en attente quand le picker est ouvert depuis un glisser (connexion
+  // vers le vide) ou depuis le bouton « + » d'une connexion (insertion).
+  const pendingPlacement = useRef<
+    | { kind: 'connect'; source: string; port: string; x: number; y: number }
+    | { kind: 'insert'; edgeId: string }
+    | null
+  >(null)
+
   const addNode = useCallback((meta: NodeMeta) => {
-    const node: WorkflowNode = {
-      id: uid('node'),
-      type: meta.type,
-      name: meta.name,
-      position: { x: 120 + yNodes.size * 30, y: 120 + yNodes.size * 20 },
-      config: defaultConfig(meta),
+    const id = uid('node')
+    const place = pendingPlacement.current
+    pendingPlacement.current = null
+
+    let pos = { x: 120 + yNodes.size * 30, y: 120 + yNodes.size * 20 }
+    if (place?.kind === 'connect') {
+      pos = { x: Math.round(place.x), y: Math.round(place.y - 30) }
+    } else if (place?.kind === 'insert') {
+      const e = yEdges.get(place.edgeId)
+      const s = e && yNodes.get(e.source); const tg = e && yNodes.get(e.target)
+      if (s && tg) pos = { x: Math.round((s.position.x + tg.position.x) / 2), y: Math.round((s.position.y + tg.position.y) / 2) }
     }
-    yNodes.set(node.id, node); setSelectedIds(new Set([node.id])); setShowPicker(false); markDirty()
-  }, [yNodes])
+    const node: WorkflowNode = { id, type: meta.type, name: meta.name, position: pos, config: defaultConfig(meta) }
+
+    const mkEdge = (source: string, target: string, sourcePort: string | null): WorkflowEdge => {
+      const eid = uid('edge')
+      return { id: eid, source, target, source_port: sourcePort, target_port: null }
+    }
+    doc.transact(() => {
+      yNodes.set(id, node)
+      if (place?.kind === 'connect') {
+        const e = mkEdge(place.source, id, place.port === 'default' ? null : place.port)
+        yEdges.set(e.id, e)
+      } else if (place?.kind === 'insert') {
+        const orig = yEdges.get(place.edgeId)
+        if (orig) {
+          yEdges.delete(orig.id)
+          const e1 = mkEdge(orig.source, id, orig.source_port ?? null)
+          const e2 = mkEdge(id, orig.target, null)
+          yEdges.set(e1.id, e1); yEdges.set(e2.id, e2)
+        }
+      }
+    })
+    setSelectedIds(new Set([id])); setShowPicker(false); markDirty()
+  }, [doc, yNodes, yEdges])
+
+  const openPickerForConnect = useCallback((source: string, port: string, x: number, y: number) => {
+    pendingPlacement.current = { kind: 'connect', source, port, x, y }
+    setShowPicker(true)
+  }, [])
+  const openPickerForInsert = useCallback((edgeId: string) => {
+    pendingPlacement.current = { kind: 'insert', edgeId }
+    setShowPicker(true)
+  }, [])
+
+  // ── Notes autocollantes ──────────────────────────────────────────────────────
+  const NOTE_COLORS = ['#fff8c4', '#d7f0d0', '#d4e4fb', '#fbd9d3', '#ece1f9']
+  const addNote = useCallback((x: number, y: number) => {
+    const id = uid('note')
+    const color = NOTE_COLORS[yNotes.size % NOTE_COLORS.length]
+    const note: StickyNote = { id, position: { x: Math.round(x), y: Math.round(y) }, width: 180, height: 120, text: '', color }
+    yNotes.set(id, note); markDirty()
+  }, [yNotes])
+  const moveNote = useCallback((id: string, x: number, y: number) => {
+    const n = yNotes.get(id); if (n) yNotes.set(id, { ...n, position: { x, y } }); markDirty()
+  }, [yNotes])
+  const resizeNote = useCallback((id: string, width: number, height: number) => {
+    const n = yNotes.get(id); if (n) yNotes.set(id, { ...n, width, height }); markDirty()
+  }, [yNotes])
+  const editNote = useCallback((id: string, text: string) => {
+    const n = yNotes.get(id); if (n) yNotes.set(id, { ...n, text }); markDirty()
+  }, [yNotes])
+  const deleteNote = useCallback((id: string) => { yNotes.delete(id); markDirty() }, [yNotes])
 
   const moveNode = useCallback((nid: string, x: number, y: number) => {
     const n = yNodes.get(nid); if (n) yNodes.set(nid, { ...n, position: { x, y } }); markDirty()
@@ -156,6 +239,11 @@ export default function FlowEditor() {
 
   const patchNode = useCallback((nid: string, patch: Partial<WorkflowNode>) => {
     const n = yNodes.get(nid); if (n) yNodes.set(nid, { ...n, ...patch }); markDirty()
+  }, [yNodes])
+
+  const toggleDisabled = useCallback((nid: string) => {
+    const n = yNodes.get(nid); if (!n) return
+    yNodes.set(nid, { ...n, settings: { ...(n.settings ?? {}), disabled: !n.settings?.disabled } }); markDirty()
   }, [yNodes])
 
   const deleteNode = useCallback((nid: string) => {
@@ -168,23 +256,54 @@ export default function FlowEditor() {
     setSelectedIds(new Set()); markDirty()
   }, [doc, yNodes, dropEdgesTouching, selectedIds])
 
-  // Suppr/Backspace supprime la sélection (hors champ de saisie).
+  const undo = useCallback(() => { undoMgr.undo(); markDirty() }, [undoMgr])
+  const redo = useCallback(() => { undoMgr.redo(); markDirty() }, [undoMgr])
+
+  // Raccourcis : Suppr/Backspace = supprimer la sélection ; Ctrl+Z / Ctrl+Maj+Z (ou Ctrl+Y) = annuler/refaire.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return
       const el = e.target as HTMLElement | null
-      if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable) return
+      const inField = el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        if (inField) return
+        e.preventDefault()
+        if (e.shiftKey) redo(); else undo()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        if (inField) return
+        e.preventDefault(); redo(); return
+      }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      if (inField) return
       if (selectedIds.size > 0) { e.preventDefault(); deleteSelected() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedIds, deleteSelected])
+  }, [selectedIds, deleteSelected, undo, redo])
 
   const connect = useCallback((source: string, sourcePort: string, target: string) => {
     if ([...yEdges.values()].some(x => x.source === source && x.target === target && (x.source_port ?? 'default') === sourcePort)) return
     const edge: WorkflowEdge = { id: uid('edge'), source, target, source_port: sourcePort === 'default' ? null : sourcePort, target_port: null }
     yEdges.set(edge.id, edge); markDirty()
   }, [yEdges])
+
+  // Branche un sous-nœud IA (modèle/mémoire/outil/parser) sur un port d'agent.
+  const connectAi = useCallback((source: string, target: string, port: string) => {
+    const agent = yNodes.get(target)
+    const si = agent && metas.get(agent.type)?.subInputs?.find(s => s.id === port)
+    doc.transact(() => {
+      // Ports non « multiple » (modèle/mémoire/parser) : un seul sous-nœud → remplacer.
+      if (si && !si.multiple) {
+        for (const e of [...yEdges.values()]) if (e.target === target && e.target_port === port) yEdges.delete(e.id)
+      } else if ([...yEdges.values()].some(e => e.source === source && e.target === target && e.target_port === port)) {
+        return
+      }
+      const e: WorkflowEdge = { id: uid('edge'), source, target, source_port: 'ai', target_port: port }
+      yEdges.set(e.id, e)
+    })
+    markDirty()
+  }, [doc, yNodes, yEdges, metas])
 
   const deleteEdge = useCallback((eid: string) => { yEdges.delete(eid); markDirty() }, [yEdges])
 
@@ -229,18 +348,18 @@ export default function FlowEditor() {
   const save = useCallback(async () => {
     if (!wf || !ready) return // ne jamais sauvegarder l'état pré-synchro (vide)
     setSaving(true)
-    const definition: WorkflowDefinition = { nodes, edges }
+    const definition: WorkflowDefinition = { nodes, edges, notes }
     try {
       const updated = await flowApi.update(wf.id, { name: titleDraft, definition })
       setWf(updated); setDirty(false)
     } catch { /* ignore */ } finally { setSaving(false) }
-  }, [wf, ready, nodes, edges, titleDraft])
+  }, [wf, ready, nodes, edges, notes, titleDraft])
 
   // Autosave fiable (debounce + flush au démontage/fermeture) — le workflow
   // (.kbflw) n'était sauvé que manuellement / avant exécution.
   // Gardé par `ready` : tant que la collab n'a pas synchronisé/amorcé, l'état
   // {nodes,edges} est vide et NE DOIT PAS être sauvegardé (sinon perte de données).
-  useDebouncedAutosave({ nodes, edges }, ready && !!wf, () => { void save() })
+  useDebouncedAutosave({ nodes, edges, notes }, ready && !!wf, () => { void save() })
 
   const run = useCallback(async () => {
     if (!wf) return
@@ -287,8 +406,15 @@ export default function FlowEditor() {
   // Outils principaux dans la TOOLBAR (options bar), sous la barre de menus.
   const toolbarActions = (
     <div className="flex items-center gap-1.5 px-2 w-full">
-      <button onClick={() => setShowPicker(true)} className="flex items-center gap-1 text-xs text-white bg-[#e8824a] hover:bg-[#d9733b] px-2.5 py-1 rounded">
+      <button onClick={() => { pendingPlacement.current = null; setShowPicker(true) }} className="flex items-center gap-1 text-xs text-white bg-[#e8824a] hover:bg-[#d9733b] px-2.5 py-1 rounded">
         <Plus size={14} /> {t('add_node')}
+      </button>
+      <div className="w-px h-5 bg-[#dadce0] mx-1" />
+      <button onClick={undo} disabled={!undoMgr.canUndo()} title={t('undo', { defaultValue: 'Annuler (Ctrl+Z)' })} className="flex items-center text-[#5f6368] hover:text-[#202124] hover:bg-[#e8eaed] px-1.5 py-1 rounded disabled:opacity-30">
+        <Undo2 size={15} />
+      </button>
+      <button onClick={redo} disabled={!undoMgr.canRedo()} title={t('redo', { defaultValue: 'Refaire (Ctrl+Maj+Z)' })} className="flex items-center text-[#5f6368] hover:text-[#202124] hover:bg-[#e8eaed] px-1.5 py-1 rounded disabled:opacity-30">
+        <Redo2 size={15} />
       </button>
       <div className="w-px h-5 bg-[#dadce0] mx-1" />
       <button onClick={run} disabled={running} className="flex items-center gap-1 text-xs text-[#202124] bg-[#e8eaed] hover:bg-[#dadce0] px-2.5 py-1 rounded disabled:opacity-50">
@@ -299,6 +425,9 @@ export default function FlowEditor() {
       </button>
       <button onClick={() => setShowHistory(h => !h)} className="flex items-center gap-1 text-xs text-[#202124] bg-[#e8eaed] hover:bg-[#dadce0] px-2.5 py-1 rounded">
         <History size={14} /> {t('history')}
+      </button>
+      <button onClick={() => setCredsManager({ open: true })} className="flex items-center gap-1 text-xs text-[#202124] bg-[#e8eaed] hover:bg-[#dadce0] px-2.5 py-1 rounded">
+        <KeyRound size={14} /> {t('credentials', { defaultValue: 'Identifiants' })}
       </button>
     </div>
   )
@@ -336,11 +465,14 @@ export default function FlowEditor() {
       <div className="relative flex flex-1 min-w-0 min-h-0">
         <div className="flex-1 relative min-w-0">
           <FlowCanvas
-            nodes={nodes} edges={edges} metas={metas}
+            nodes={nodes} edges={edges} notes={notes} metas={metas}
             selectedIds={selectedIds} logs={logs}
             onSelectionChange={setSelectedIds}
             onMoveNode={moveNode}
             onConnect={connect}
+            onConnectToCanvas={openPickerForConnect}
+            onConnectAi={connectAi}
+            onInsertOnEdge={openPickerForInsert}
             onDeleteEdge={deleteEdge}
             onSetWaypoints={setEdgeWaypoints}
             onDeleteNode={deleteNode}
@@ -348,10 +480,16 @@ export default function FlowEditor() {
             onDuplicateNode={duplicateNode}
             onRenameNode={renameNode}
             onCopyNode={copyNode}
+            onToggleDisabled={toggleDisabled}
             onDisconnectNode={disconnectNode}
             onPaste={paste}
             canPaste={hasClipboard}
-            onRequestAddNode={() => setShowPicker(true)}
+            onRequestAddNode={() => { pendingPlacement.current = null; setShowPicker(true) }}
+            onAddNote={addNote}
+            onMoveNote={moveNote}
+            onResizeNote={resizeNote}
+            onEditNote={editNote}
+            onDeleteNote={deleteNote}
           />
           {nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -361,13 +499,15 @@ export default function FlowEditor() {
               </div>
             </div>
           )}
-          {showPicker && <NodePicker catalog={catalog} onPick={addNode} onClose={() => setShowPicker(false)} />}
+          {showPicker && <NodePicker catalog={catalog} onPick={addNode} onClose={() => { pendingPlacement.current = null; setShowPicker(false) }} />}
         </div>
 
         {selected && !showHistory && (
           <NodeConfigPanel
             node={selected} meta={metas.get(selected.type)} workflowId={id}
-            lastLog={logs.get(selected.id)}
+            lastLog={logs.get(selected.id)} exprHelp={exprHelp}
+            credentials={credentials}
+            onManageCredentials={(preset) => setCredsManager({ open: true, preset })}
             onChange={(patch) => patchNode(selected.id, patch)}
             onDelete={() => deleteNode(selected.id)}
           />
@@ -377,6 +517,14 @@ export default function FlowEditor() {
           <ExecutionHistory workflowId={wf.id} onClose={() => setShowHistory(false)} />
         )}
       </div>
+
+      {credsManager.open && (
+        <CredentialsManager
+          presetType={credsManager.preset}
+          onChanged={() => flowApi.credentials().then(setCredentials).catch(() => {})}
+          onClose={() => setCredsManager({ open: false })}
+        />
+      )}
     </WorkspaceShell>
   )
 }

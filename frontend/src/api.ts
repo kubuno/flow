@@ -1,5 +1,5 @@
 import { api } from '@kubuno/sdk'
-import type { Execution, NodeLog, NodeMeta, Workflow, WorkflowDefinition } from './types'
+import type { CredentialMeta, CredentialType, Execution, ExprHelp, NodeLog, NodeMeta, Workflow, WorkflowDefinition } from './types'
 
 export const flowApi = {
   // Workflows
@@ -68,6 +68,35 @@ export const flowApi = {
   // Catalogue
   async nodeCatalog(): Promise<NodeMeta[]> {
     const { data } = await api.get('/flow/nodes')
+    return data
+  },
+  async expressionHelp(): Promise<ExprHelp> {
+    const { data } = await api.get('/flow/expression-help')
+    return data
+  },
+
+  // Credentials
+  async credentialTypes(): Promise<CredentialType[]> {
+    const { data } = await api.get('/flow/credential-types')
+    return data
+  },
+  async credentials(): Promise<CredentialMeta[]> {
+    const { data } = await api.get('/flow/credentials')
+    return data
+  },
+  async createCredential(payload: { name: string; type: string; data: Record<string, unknown> }): Promise<CredentialMeta> {
+    const { data } = await api.post('/flow/credentials', payload)
+    return data
+  },
+  async updateCredential(id: string, payload: { name?: string; data?: Record<string, unknown> }): Promise<CredentialMeta> {
+    const { data } = await api.put(`/flow/credentials/${id}`, payload)
+    return data
+  },
+  async deleteCredential(id: string): Promise<void> {
+    await api.delete(`/flow/credentials/${id}`)
+  },
+  async testCredential(payload: { type: string; data: Record<string, unknown> }): Promise<{ ok: boolean | null; message: string }> {
+    const { data } = await api.post('/flow/credentials/test', payload)
     return data
   },
 

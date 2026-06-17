@@ -117,10 +117,11 @@ async fn process_job(state: &AppState, job: queue::Job) {
     };
 
     let executor = Executor {
-        db:       state.db.clone(),
-        registry: state.registry.clone(),
-        proxy:    state.proxy.clone(),
-        settings: state.settings.clone(),
+        db:           state.db.clone(),
+        registry:     state.registry.clone(),
+        proxy:        state.proxy.clone(),
+        settings:     state.settings.clone(),
+        files_client: state.files_client.clone(),
     };
 
     // Protège le fichier workflow tant que l'exécution se poursuit.
@@ -164,6 +165,16 @@ async fn process_job(state: &AppState, job: queue::Job) {
                        WHERE id = $1"#,
                 ).bind(job.workflow_id).bind(&err).execute(&state.db).await;
                 publish_workflow_event(state, "WorkflowFailed", job.workflow_id, job.owner_id, Some(&err)).await;
+
+                // Déclencheur d'erreur : démarre les workflows « trigger.error » de l'utilisateur
+                // (sauf si CET échec provient déjà d'un workflow d'erreur → pas de boucle).
+                if job.trigger_source != "error" {
+                    let wf_name = sqlx::query_scalar::<_, String>("SELECT name FROM flow.workflows WHERE id = $1")
+                        .bind(job.workflow_id).fetch_optional(&state.db).await.ok().flatten().unwrap_or_default();
+                    crate::runtime::scheduler::dispatch_error_workflows(
+                        state, job.workflow_id, &wf_name, job.owner_id, execution_id, &err,
+                    ).await;
+                }
             }
         }
     }

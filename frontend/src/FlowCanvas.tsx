@@ -1,14 +1,15 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as Icons from 'lucide-react'
 import clsx from 'clsx'
 import { MenuDropdown, type MenuItem } from '@ui'
-import type { NodeLog, NodeMeta, WorkflowEdge, WorkflowNode } from './types'
+import type { NodeLog, NodeMeta, StickyNote, WorkflowEdge, WorkflowNode } from './types'
 
 export const NODE_W = 210
-const HEADER_Y = 30 // centre vertical de l'en-tête (port d'entrée + sortie par défaut)
-const PORT_BASE = 54
-const PORT_GAP = 22
+const PORT_GAP = 22 // espacement vertical entre deux ports de sortie
+const NODE_H = 92 // hauteur approximative d'un nœud (test d'intersection marquee + minimap)
+// Hauteurs des bandes du box pour calculer le centre vertical réel (ports centrés).
+const NODE_HEAD_H = 48, NODE_SUMMARY_H = 18, NODE_FOOTER_H = 19, NODE_DISABLED_H = 13
 
 function LucideIcon({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   const Cmp = (Icons as unknown as Record<string, React.ComponentType<{ size?: number; color?: string }>>)[name] ?? Icons.Box
@@ -20,11 +21,157 @@ function outputs(meta: NodeMeta | undefined): string[] {
   return meta.outputs.length > 0 ? meta.outputs.map(o => o.id) : ['default']
 }
 
-function outPortY(meta: NodeMeta | undefined, portId: string): number {
+/** Hauteur réelle du box d'un nœud (en-tête + sous-titre + pied éventuels). */
+function nodeBoxHeight(n: WorkflowNode, meta: NodeMeta | undefined, hasLog: boolean): number {
+  let h = NODE_HEAD_H
+  if (nodeSummary(n, meta)) h += NODE_SUMMARY_H
+  if (hasLog) h += NODE_FOOTER_H
+  if (n.settings?.disabled) h += NODE_DISABLED_H
+  return h
+}
+
+/** Y du port d'entrée : centre vertical du nœud. */
+function inPortYAt(n: WorkflowNode, meta: NodeMeta | undefined, hasLog: boolean): number {
+  return nodeBoxHeight(n, meta, hasLog) / 2
+}
+
+/** Y d'un port de sortie : centré verticalement, les ports multiples répartis autour du centre. */
+function outPortYAt(n: WorkflowNode, meta: NodeMeta | undefined, portId: string, hasLog: boolean): number {
+  const cy = nodeBoxHeight(n, meta, hasLog) / 2
   const outs = outputs(meta)
-  if (outs.length <= 1) return HEADER_Y
+  if (outs.length <= 1) return cy
   const idx = Math.max(0, outs.indexOf(portId))
-  return PORT_BASE + idx * PORT_GAP
+  return cy + (idx - (outs.length - 1) / 2) * PORT_GAP
+}
+
+// ── Routage orthogonal des connecteurs (repris du sous-module Diagrams d'Office) ──
+// Segments droits + coudes arrondis + sauts de croisement — plus de courbes de Bézier.
+type Pt = { x: number; y: number }
+const BEND_R = 10 // rayon d'arrondi des coudes
+const HOP_R = 5   // rayon des sauts de croisement
+
+/** Route orthogonale d'une sortie (à droite) vers une entrée (à gauche). */
+function orthRoute(src: Pt, dst: Pt): Pt[] {
+  const PAD = 28
+  if (dst.x >= src.x + PAD * 2) {
+    // Cible à droite : sortie → milieu vertical → entrée (équerre en Z).
+    const mx = Math.round((src.x + dst.x) / 2)
+    if (Math.abs(src.y - dst.y) < 1) return [src, dst]
+    return [src, { x: mx, y: src.y }, { x: mx, y: dst.y }, dst]
+  }
+  // Cible à gauche / derrière : on sort à droite, on contourne, on rentre par la gauche.
+  const my = Math.round((src.y + dst.y) / 2)
+  return [
+    src,
+    { x: src.x + PAD, y: src.y },
+    { x: src.x + PAD, y: my },
+    { x: dst.x - PAD, y: my },
+    { x: dst.x - PAD, y: dst.y },
+    dst,
+  ]
+}
+
+const dist = (p: Pt, q: Pt) => Math.hypot(q.x - p.x, q.y - p.y)
+
+/** Chemin SVG : portions droites, coudes arrondis (quadratique) et sauts aux croisements. */
+function roundedPath(pts: Pt[], hops?: Pt[][]): string {
+  if (pts.length < 2) return ''
+  const rad = pts.map(() => 0)
+  for (let i = 1; i < pts.length - 1; i++) {
+    rad[i] = Math.min(BEND_R, dist(pts[i - 1], pts[i]) / 2, dist(pts[i], pts[i + 1]) / 2)
+  }
+  let d = `M ${pts[0].x} ${pts[0].y}`
+  for (let s = 0; s < pts.length - 1; s++) {
+    const p0 = pts[s], p1 = pts[s + 1]
+    const segLen = dist(p0, p1) || 1
+    const dx = (p1.x - p0.x) / segLen, dy = (p1.y - p0.y) / segLen
+    const startCut = s > 0 ? rad[s] : 0
+    const endCut = (s + 1 < pts.length - 1) ? rad[s + 1] : 0
+    const aPt = { x: p0.x + dx * startCut, y: p0.y + dy * startCut }
+    const bPt = { x: p1.x - dx * endCut, y: p1.y - dy * endCut }
+    const straight = dist(aPt, bPt)
+    const segHops = (hops?.[s] ?? [])
+      .map(P => ({ P, t: (P.x - aPt.x) * dx + (P.y - aPt.y) * dy }))
+      .filter(h => h.t > HOP_R && h.t < straight - HOP_R)
+      .sort((u, v) => u.t - v.t)
+    for (const h of segHops) {
+      const A = { x: aPt.x + dx * (h.t - HOP_R), y: aPt.y + dy * (h.t - HOP_R) }
+      const B = { x: aPt.x + dx * (h.t + HOP_R), y: aPt.y + dy * (h.t + HOP_R) }
+      d += ` L ${A.x} ${A.y} A ${HOP_R} ${HOP_R} 0 0 1 ${B.x} ${B.y}`
+    }
+    d += ` L ${bPt.x} ${bPt.y}`
+    if (s + 1 < pts.length - 1) {
+      // coude arrondi au sommet p1 (contrôle quadratique = le sommet)
+      const p2 = pts[s + 2]
+      const l2 = dist(p1, p2) || 1
+      const cEnd = { x: p1.x + ((p2.x - p1.x) / l2) * rad[s + 1], y: p1.y + ((p2.y - p1.y) / l2) * rad[s + 1] }
+      d += ` Q ${p1.x} ${p1.y} ${cEnd.x} ${cEnd.y}`
+    }
+  }
+  return d
+}
+
+/** Intersection strictement intérieure de [a,b] et [c,d] (null sinon). */
+function segIntersect(a: Pt, b: Pt, c: Pt, d: Pt): Pt | null {
+  const r1x = b.x - a.x, r1y = b.y - a.y
+  const r2x = d.x - c.x, r2y = d.y - c.y
+  const den = r1x * r2y - r1y * r2x
+  if (Math.abs(den) < 1e-9) return null
+  const t = ((c.x - a.x) * r2y - (c.y - a.y) * r2x) / den
+  const u = ((c.x - a.x) * r1y - (c.y - a.y) * r1x) / den
+  const eps = 1e-3
+  if (t <= eps || t >= 1 - eps || u <= eps || u >= 1 - eps) return null
+  return { x: a.x + t * r1x, y: a.y + t * r1y }
+}
+
+/** Aimante un waypoint W vers une équerre alignée sur les axes (voisins P, N). */
+function magnetizeRightAngle(W: Pt, P: Pt, N: Pt, thresholdDeg: number): Pt {
+  const deg = (r: number) => (r * 180) / Math.PI
+  const ah1 = deg(Math.atan2(Math.abs(W.y - P.y), Math.abs(W.x - P.x)))
+  const av1 = deg(Math.atan2(Math.abs(W.x - N.x), Math.abs(W.y - N.y)))
+  const av2 = deg(Math.atan2(Math.abs(W.x - P.x), Math.abs(W.y - P.y)))
+  const ah2 = deg(Math.atan2(Math.abs(W.y - N.y), Math.abs(W.x - N.x)))
+  const ok1 = ah1 <= thresholdDeg && av1 <= thresholdDeg
+  const ok2 = av2 <= thresholdDeg && ah2 <= thresholdDeg
+  if (!ok1 && !ok2) return W
+  const e1 = { x: N.x, y: P.y }
+  const e2 = { x: P.x, y: N.y }
+  if (ok1 && ok2) return dist(W, e1) <= dist(W, e2) ? e1 : e2
+  return ok1 ? e1 : e2
+}
+
+/** Résumé court de la configuration d'un nœud, affiché sous son titre (façon n8n). */
+function nodeSummary(n: WorkflowNode, meta: NodeMeta | undefined): string {
+  const c = n.config || {}
+  const s = (k: string) => { const v = c[k]; return v == null ? '' : typeof v === 'string' ? v : JSON.stringify(v) }
+  switch (n.type) {
+    case 'external.http_request': { const m = s('method') || 'GET'; const u = s('url'); return u ? `${m} ${u}` : m }
+    case 'external.ai':           return s('model') || s('provider')
+    case 'logic.if':              return [s('value'), s('operator'), s('compare')].filter(Boolean).join(' ')
+    case 'logic.switch':          return s('value')
+    case 'logic.filter':          return [s('field'), s('operator'), s('compare')].filter(Boolean).join(' ')
+    case 'logic.sort':            return [s('field'), s('order')].filter(Boolean).join(' · ')
+    case 'logic.limit':           return s('count') ? `${s('count')} max` : ''
+    case 'logic.set_variable':    return s('name') ? `${s('name')} = ${s('value')}` : ''
+    case 'logic.calculate':       return [s('a'), s('operation'), s('b')].filter(Boolean).join(' ')
+    case 'logic.datetime':        return s('operation')
+    case 'logic.crypto':          return s('operation')
+    case 'logic.random':          return s('operation')
+    case 'logic.wait':            return s('seconds') ? `${s('seconds')} s` : ''
+    case 'kubuno.mail.send':      return s('to') ? `→ ${s('to')}` : ''
+    case 'kubuno.notification':   return s('title')
+    case 'kubuno.tasks.create':   return s('title')
+    case 'kubuno.calendar.create':return s('title')
+    case 'flow.subworkflow':
+    case 'flow.loop_items':       return s('workflow_id') ? '↳ sous-workflow' : ''
+    case 'trigger.cron':          return s('expression')
+    case 'trigger.webhook':       return 'POST /webhook'
+    default: {
+      // Repli générique : 1ʳᵉ valeur de champ texte/expression non vide.
+      const f = meta?.fields.find(f => (f.type === 'expression' || f.type === 'text') && s(f.name))
+      return f ? s(f.name) : ''
+    }
+  }
 }
 
 interface Viewport { tx: number; ty: number; scale: number }
@@ -32,12 +179,17 @@ interface Viewport { tx: number; ty: number; scale: number }
 interface Props {
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
+  notes: StickyNote[]
   metas: Map<string, NodeMeta>
   selectedIds: Set<string>
   logs: Map<string, NodeLog>
   onSelectionChange: (ids: Set<string>) => void
   onMoveNode: (id: string, x: number, y: number) => void
   onConnect: (source: string, sourcePort: string, target: string) => void
+  onConnectToCanvas: (source: string, sourcePort: string, x: number, y: number) => void
+  /** Branche un sous-nœud IA (source) sur le port `port` d'un agent (target). */
+  onConnectAi: (source: string, target: string, port: string) => void
+  onInsertOnEdge: (edgeId: string) => void
   onDeleteEdge: (id: string) => void
   onSetWaypoints: (edgeId: string, waypoints: { x: number; y: number }[]) => void
   onDeleteNode: (id: string) => void
@@ -45,42 +197,52 @@ interface Props {
   onDuplicateNode: (id: string) => void
   onRenameNode: (id: string) => void
   onCopyNode: (id: string) => void
+  onToggleDisabled: (id: string) => void
   onDisconnectNode: (id: string) => void
   onPaste: () => void
   canPaste: boolean
   onRequestAddNode: () => void
+  onAddNote: (x: number, y: number) => void
+  onMoveNote: (id: string, x: number, y: number) => void
+  onResizeNote: (id: string, w: number, h: number) => void
+  onEditNote: (id: string, text: string) => void
+  onDeleteNote: (id: string) => void
 }
 
-const NODE_H = 92 // hauteur approximative d'un nœud (pour le test d'intersection marquee)
-
 export default function FlowCanvas({
-  nodes, edges, metas, selectedIds, logs, onSelectionChange, onMoveNode, onConnect, onDeleteEdge, onSetWaypoints,
-  onDeleteNode, onDeleteSelected, onDuplicateNode, onRenameNode, onCopyNode, onDisconnectNode, onPaste, canPaste, onRequestAddNode,
+  nodes, edges, notes, metas, selectedIds, logs, onSelectionChange, onMoveNode, onConnect, onConnectToCanvas, onConnectAi,
+  onInsertOnEdge, onDeleteEdge, onSetWaypoints, onDeleteNode, onDeleteSelected, onDuplicateNode, onRenameNode,
+  onCopyNode, onToggleDisabled, onDisconnectNode, onPaste, canPaste, onRequestAddNode,
+  onAddNote, onMoveNote, onResizeNote, onEditNote, onDeleteNote,
 }: Props) {
   const { t } = useTranslation('flow')
   const containerRef = useRef<HTMLDivElement>(null)
   const [vp, setVp] = useState<Viewport>({ tx: 40, ty: 40, scale: 1 })
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
-  const [connecting, setConnecting] = useState<{ source: string; port: string } | null>(null)
+  // Glisser depuis un port de sortie pour créer une connexion (drag-to-connect).
+  const [connectDrag, setConnectDrag] = useState<{ source: string; port: string; sx: number; sy: number } | null>(null)
+  // Glisser une connexion IA : depuis un sous-nœud (`sub`) ou depuis un port d'agent (`agent`).
+  const [aiDrag, setAiDrag] = useState<{ kind: string; sx: number; sy: number; sub?: string; agent?: { id: string; port: string } } | null>(null)
+  const [ghostEnd, setGhostEnd] = useState<{ x: number; y: number } | null>(null)
+  const [hoverEdge, setHoverEdge] = useState<string | null>(null)
+  const [hoverNode, setHoverNode] = useState<string | null>(null)
   // Glisser de nœud(s) : déplace toute la sélection en bloc.
   const drag = useRef<{ startX: number; startY: number; items: { id: string; origX: number; origY: number }[] } | null>(null)
+  const noteDrag = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null)
+  const noteResize = useRef<{ id: string; startX: number; startY: number; origW: number; origH: number } | null>(null)
   const pan = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null)
-  // Sélection au rectangle (clic gauche sur le fond) — coords relatives au conteneur.
   const marquee = useRef<{ sx: number; sy: number; base: Set<string> } | null>(null)
   const [mrect, setMrect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [grabbing, setGrabbing] = useState(false)
-  // Glisser d'un point de passage d'une connexion.
   const wpDrag = useRef<{ edgeId: string; index: number } | null>(null)
 
   const byId = useCallback((id: string) => nodes.find(n => n.id === id), [nodes])
 
-  // Convertit des coordonnées écran en coordonnées « monde » du plan de travail.
   const toWorld = useCallback((clientX: number, clientY: number) => {
     const r = containerRef.current!.getBoundingClientRect()
     return { x: (clientX - r.left - vp.tx) / vp.scale, y: (clientY - r.top - vp.ty) / vp.scale }
   }, [vp])
 
-  // Nœuds intersectant un rectangle (coords écran relatives au conteneur).
   const nodesInRect = useCallback((r: { x: number; y: number; w: number; h: number }): string[] => {
     const ids: string[] = []
     for (const n of nodes) {
@@ -103,13 +265,22 @@ export default function FlowCanvas({
   }
   const zoomBy = (f: number) => setVp(v => ({ ...v, scale: Math.min(2.5, Math.max(0.25, v.scale * f)) }))
   const resetView = () => setVp({ tx: 40, ty: 40, scale: 1 })
+  const contentBounds = useCallback(() => {
+    const pts = [
+      ...nodes.map(n => ({ x: n.position.x, y: n.position.y, w: NODE_W, h: NODE_H })),
+      ...notes.map(n => ({ x: n.position.x, y: n.position.y, w: n.width, h: n.height })),
+    ]
+    if (!pts.length) return null
+    const minX = Math.min(...pts.map(p => p.x)), minY = Math.min(...pts.map(p => p.y))
+    const maxX = Math.max(...pts.map(p => p.x + p.w)), maxY = Math.max(...pts.map(p => p.y + p.h))
+    return { minX, minY, maxX, maxY }
+  }, [nodes, notes])
   const fitToContent = () => {
-    if (!nodes.length || !containerRef.current) { resetView(); return }
-    const minX = Math.min(...nodes.map(n => n.position.x)), minY = Math.min(...nodes.map(n => n.position.y))
-    const maxX = Math.max(...nodes.map(n => n.position.x + NODE_W)), maxY = Math.max(...nodes.map(n => n.position.y + 90))
+    const b = contentBounds()
+    if (!b || !containerRef.current) { resetView(); return }
     const r = containerRef.current.getBoundingClientRect(), pad = 60
-    const scale = Math.min(2.5, Math.max(0.25, Math.min((r.width - pad * 2) / (maxX - minX || 1), (r.height - pad * 2) / (maxY - minY || 1))))
-    setVp({ tx: pad - minX * scale, ty: pad - minY * scale, scale })
+    const scale = Math.min(2.5, Math.max(0.25, Math.min((r.width - pad * 2) / (b.maxX - b.minX || 1), (r.height - pad * 2) / (b.maxY - b.minY || 1))))
+    setVp({ tx: pad - b.minX * scale, ty: pad - b.minY * scale, scale })
   }
   const multi = selectedIds.size > 1
   const nodeMenu = (n: WorkflowNode): MenuItem[] => [
@@ -117,6 +288,7 @@ export default function FlowCanvas({
     { type: 'action', label: t('ctx_rename',      { defaultValue: 'Renommer' }),           icon: ic('Pencil'),         onClick: () => onRenameNode(n.id) },
     { type: 'action', label: t('ctx_duplicate',   { defaultValue: 'Dupliquer' }),          shortcut: 'Ctrl+D', icon: ic('CopyPlus'), onClick: () => onDuplicateNode(n.id) },
     { type: 'action', label: t('ctx_copy',        { defaultValue: 'Copier' }),             shortcut: 'Ctrl+C', icon: ic('Copy'),     onClick: () => onCopyNode(n.id) },
+    { type: 'action', label: n.settings?.disabled ? t('ctx_enable', { defaultValue: 'Activer' }) : t('ctx_disable', { defaultValue: 'Désactiver' }), icon: ic(n.settings?.disabled ? 'Power' : 'PowerOff'), onClick: () => onToggleDisabled(n.id) },
     { type: 'action', label: t('ctx_disconnect',  { defaultValue: 'Détacher les liens' }), icon: ic('Unlink'),         onClick: () => onDisconnectNode(n.id) },
     { type: 'separator' },
     (multi && selectedIds.has(n.id)
@@ -124,12 +296,14 @@ export default function FlowCanvas({
       : { type: 'action', label: t('ctx_delete',           { defaultValue: 'Supprimer le nœud' }),                                          shortcut: 'Suppr', icon: ic('Trash2'), onClick: () => onDeleteNode(n.id) }),
   ]
   const edgeMenu = (e: WorkflowEdge, world: { x: number; y: number }): MenuItem[] => [
+    { type: 'action', label: t('ctx_insert_node', { defaultValue: 'Insérer un nœud ici' }), icon: ic('PlusCircle'), onClick: () => onInsertOnEdge(e.id) },
     { type: 'action', label: t('ctx_add_point',    { defaultValue: 'Ajouter un point' }),        icon: ic('Spline'),   onClick: () => addWaypointAt(e, world) },
     { type: 'separator' },
     { type: 'action', label: t('ctx_delete_edge',  { defaultValue: 'Supprimer la connexion' }),  icon: ic('Scissors'), onClick: () => onDeleteEdge(e.id) },
   ]
-  const canvasMenu = (): MenuItem[] => [
+  const canvasMenu = (world: { x: number; y: number }): MenuItem[] => [
     { type: 'action', label: t('ctx_add_node',   { defaultValue: 'Ajouter un nœud' }), icon: ic('Plus'),            onClick: onRequestAddNode },
+    { type: 'action', label: t('ctx_add_note',   { defaultValue: 'Ajouter une note' }), icon: ic('StickyNote'),     onClick: () => onAddNote(world.x, world.y) },
     { type: 'action', label: t('ctx_paste',      { defaultValue: 'Coller' }),          shortcut: 'Ctrl+V', disabled: !canPaste, icon: ic('ClipboardPaste'), onClick: onPaste },
     { type: 'separator' },
     { type: 'action', label: t('ctx_zoom_in',    { defaultValue: 'Zoom avant' }),      icon: ic('ZoomIn'),          onClick: () => zoomBy(1.2) },
@@ -146,12 +320,9 @@ export default function FlowCanvas({
   }
   const onSelectOne = (id: string) => onSelectionChange(new Set([id]))
 
-  // Clic CENTRAL (bouton 1) = déplacer le plan de travail (n'importe où).
-  // Clic GAUCHE (bouton 0) sur le fond = sélection au rectangle (marquee).
   const onContainerPointerDown = (e: React.PointerEvent) => {
     if (e.button === 1) {
       e.preventDefault()
-      setConnecting(null)
       setGrabbing(true)
       pan.current = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty }
       containerRef.current?.setPointerCapture?.(e.pointerId)
@@ -159,7 +330,6 @@ export default function FlowCanvas({
     }
     if (e.button !== 0) return
     if (e.target !== containerRef.current && !(e.target as HTMLElement).dataset.bg) return
-    setConnecting(null)
     const additive = e.shiftKey || e.ctrlKey || e.metaKey
     const base = additive ? new Set(selectedIds) : new Set<string>()
     if (!additive) onSelectionChange(new Set())
@@ -171,7 +341,7 @@ export default function FlowCanvas({
 
   // ── Node drag ─────────────────────────────────────────────────
   const onNodePointerDown = (e: React.PointerEvent, n: WorkflowNode) => {
-    if (e.button !== 0) return // bouton central → remonte au conteneur (pan)
+    if (e.button !== 0) return
     e.stopPropagation()
     const additive = e.shiftKey || e.ctrlKey || e.metaKey
     let sel = selectedIds
@@ -188,12 +358,29 @@ export default function FlowCanvas({
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (wpDrag.current) {
+    if (connectDrag || aiDrag) {
+      setGhostEnd(toWorld(e.clientX, e.clientY))
+    } else if (noteResize.current) {
+      const dx = (e.clientX - noteResize.current.startX) / vp.scale
+      const dy = (e.clientY - noteResize.current.startY) / vp.scale
+      onResizeNote(noteResize.current.id, Math.max(120, noteResize.current.origW + dx), Math.max(80, noteResize.current.origH + dy))
+    } else if (noteDrag.current) {
+      const dx = (e.clientX - noteDrag.current.startX) / vp.scale
+      const dy = (e.clientY - noteDrag.current.startY) / vp.scale
+      onMoveNote(noteDrag.current.id, noteDrag.current.origX + dx, noteDrag.current.origY + dy)
+    } else if (wpDrag.current) {
       const w = toWorld(e.clientX, e.clientY)
       const edge = edges.find(x => x.id === wpDrag.current!.edgeId)
       if (edge) {
+        const idx = wpDrag.current.index
         const wps = [...(edge.waypoints ?? [])]
-        wps[wpDrag.current.index] = { x: Math.round(w.x), y: Math.round(w.y) }
+        // Voisins dans la polyligne routée [src, ...waypoints, dst] (index i → routé i+1).
+        const route = edgeGeom.routes.get(edge.id)
+        let pos: Pt = { x: w.x, y: w.y }
+        if (route && route.length >= idx + 3 && !e.shiftKey) {
+          pos = magnetizeRightAngle(pos, route[idx], route[idx + 2], 8)
+        }
+        wps[idx] = { x: Math.round(pos.x), y: Math.round(pos.y) }
         onSetWaypoints(edge.id, wps)
       }
     } else if (drag.current) {
@@ -201,8 +388,6 @@ export default function FlowCanvas({
       const dy = (e.clientY - drag.current.startY) / vp.scale
       for (const it of drag.current.items) onMoveNode(it.id, it.origX + dx, it.origY + dy)
     } else if (pan.current) {
-      // Capturer la valeur du ref AVANT setVp : l'updater s'exécute plus tard et
-      // `pan.current` peut déjà être null (pointerup) → « reading 'tx' of null ».
       const p = pan.current
       const cx = e.clientX, cy = e.clientY
       setVp(v => ({ ...v, tx: p.tx + (cx - p.x), ty: p.ty + (cy - p.y) }))
@@ -214,58 +399,116 @@ export default function FlowCanvas({
       onSelectionChange(new Set([...marquee.current.base, ...nodesInRect(r)]))
     }
   }
-  const onPointerUp = () => { drag.current = null; pan.current = null; marquee.current = null; wpDrag.current = null; setMrect(null); setGrabbing(false) }
 
-  // ── Connexion (clic sortie → clic entrée) ─────────────────────
-  const clickOutput = (e: React.MouseEvent, source: string, port: string) => {
-    e.stopPropagation()
-    setConnecting({ source, port })
-  }
-  const clickInput = (e: React.MouseEvent, target: string) => {
-    e.stopPropagation()
-    if (connecting && connecting.source !== target) {
-      onConnect(connecting.source, connecting.port, target)
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (aiDrag) {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
+      if (aiDrag.sub) {
+        // Sous-nœud → port d'agent (data-ai-in = "agentId|portId|kind").
+        const slot = (el?.closest?.('[data-ai-in]') as HTMLElement | null)?.dataset.aiIn
+        if (slot) { const [agentId, portId, kind] = slot.split('|'); if (kind === aiDrag.kind) onConnectAi(aiDrag.sub, agentId, portId) }
+      } else if (aiDrag.agent) {
+        // Port d'agent → sous-nœud (data-ai-out = "nodeId|kind").
+        const out = (el?.closest?.('[data-ai-out]') as HTMLElement | null)?.dataset.aiOut
+        if (out) { const [nodeId, kind] = out.split('|'); if (kind === aiDrag.kind) onConnectAi(nodeId, aiDrag.agent.id, aiDrag.agent.port) }
+      }
+      setAiDrag(null); setGhostEnd(null)
+      return
     }
-    setConnecting(null)
+    if (connectDrag) {
+      // Cible : un port d'entrée sous le curseur, sinon le vide → ouvre le picker pré-câblé.
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
+      const inPort = el?.closest?.('[data-input]') as HTMLElement | null
+      const target = inPort?.dataset.input
+      if (target && target !== connectDrag.source) {
+        onConnect(connectDrag.source, connectDrag.port, target)
+      } else if (!el?.closest?.('[data-node]')) {
+        const w = toWorld(e.clientX, e.clientY)
+        onConnectToCanvas(connectDrag.source, connectDrag.port, w.x, w.y)
+      }
+      setConnectDrag(null); setGhostEnd(null)
+    }
+    drag.current = null; pan.current = null; marquee.current = null; wpDrag.current = null
+    noteDrag.current = null; noteResize.current = null
+    setMrect(null); setGrabbing(false)
   }
 
-  // ── Rendu des arêtes ──────────────────────────────────────────
-  type Pt = { x: number; y: number }
+  // ── Connexion par glisser depuis un port de sortie ────────────
+  const startConnect = (e: React.PointerEvent, source: string, port: string) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const n = byId(source)
+    const meta = n ? metas.get(n.type) : undefined
+    const sx = (n?.position.x ?? 0) + NODE_W
+    const sy = (n?.position.y ?? 0) + (n ? outPortYAt(n, meta, port, !!logs.get(n.id)) : 0)
+    setConnectDrag({ source, port, sx, sy })
+    setGhostEnd(toWorld(e.clientX, e.clientY))
+    containerRef.current?.setPointerCapture?.(e.pointerId)
+  }
 
-  // Points de l'arête : sortie source → points de passage → entrée cible (coords monde).
-  function edgePoints(e: WorkflowEdge): { pts: Pt[]; src: Pt; dst: Pt } | null {
+  // ── Connexions IA (sous-nœud ↔ port d'agent, par le bas) ──────
+  // X relatif d'un port de sous-entrée d'agent (réparti sur la largeur).
+  const subPortX = (idx: number, count: number) => (NODE_W * (idx + 1)) / (count + 1)
+
+  const startAiFromSub = (e: React.PointerEvent, nodeId: string, kind: string) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const n = byId(nodeId)
+    setAiDrag({ kind, sub: nodeId, sx: (n?.position.x ?? 0) + NODE_W / 2, sy: n?.position.y ?? 0 })
+    setGhostEnd(toWorld(e.clientX, e.clientY))
+    containerRef.current?.setPointerCapture?.(e.pointerId)
+  }
+  const startAiFromAgent = (e: React.PointerEvent, agentId: string, portId: string, kind: string, px: number, py: number) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    setAiDrag({ kind, agent: { id: agentId, port: portId }, sx: px, sy: py })
+    setGhostEnd(toWorld(e.clientX, e.clientY))
+    containerRef.current?.setPointerCapture?.(e.pointerId)
+  }
+
+  // ── Rendu des arêtes (routage orthogonal façon Diagrams) ──────
+  const edgeEndpoints = useCallback((e: WorkflowEdge): { src: Pt; dst: Pt } | null => {
     const s = byId(e.source); const t = byId(e.target)
     if (!s || !t) return null
-    const sm = metas.get(s.type)
-    const src = { x: s.position.x + NODE_W, y: s.position.y + outPortY(sm, e.source_port ?? 'default') }
-    const dst = { x: t.position.x, y: t.position.y + HEADER_Y }
-    return { pts: [src, ...(e.waypoints ?? []), dst], src, dst }
-  }
+    const sm = metas.get(s.type), tm = metas.get(t.type)
+    const src = { x: s.position.x + NODE_W, y: s.position.y + outPortYAt(s, sm, e.source_port ?? 'default', !!logs.get(s.id)) }
+    const dst = { x: t.position.x, y: t.position.y + inPortYAt(t, tm, !!logs.get(t.id)) }
+    return { src, dst }
+  }, [byId, metas, logs])
 
-  function edgePath(e: WorkflowEdge): string | null {
-    const ep = edgePoints(e)
-    if (!ep) return null
-    const { pts, src, dst } = ep
-    // Sans point de passage : courbe de Bézier horizontale (look « flux » gauche→droite).
-    if (pts.length === 2) {
-      const dx = Math.max(40, Math.abs(dst.x - src.x) / 2)
-      return `M ${src.x} ${src.y} C ${src.x + dx} ${src.y}, ${dst.x - dx} ${dst.y}, ${dst.x} ${dst.y}`
+  // Polylignes routées + sauts de croisement (le connecteur le plus récent enjambe).
+  const edgeGeom = useMemo(() => {
+    const routes = new Map<string, Pt[]>()
+    for (const e of edges) {
+      // Les arêtes IA (sous-nœud → agent) sont tracées séparément en pointillés :
+      // on les exclut du routage orthogonal normal (sinon double tracé en trait plein).
+      if (metas.get(byId(e.source)?.type ?? '')?.aiOutput) continue
+      const ep = edgeEndpoints(e)
+      if (!ep) continue
+      const pts = e.waypoints?.length ? [ep.src, ...e.waypoints, ep.dst] : orthRoute(ep.src, ep.dst)
+      routes.set(e.id, pts)
     }
-    // Avec points de passage : spline lisse (Catmull-Rom → Bézier) à travers tous les points.
-    let d = `M ${pts[0].x} ${pts[0].y}`
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[i - 1] ?? pts[i]
-      const p1 = pts[i]
-      const p2 = pts[i + 1]
-      const p3 = pts[i + 2] ?? p2
-      const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6
-      const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6
-      d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`
+    const hops = new Map<string, Pt[][]>()
+    const ids = edges.map(e => e.id).filter(id => routes.has(id))
+    for (let i = 0; i < ids.length; i++) {
+      const pi = routes.get(ids[i])!
+      const h: Pt[][] = []
+      for (let s = 0; s < pi.length - 1; s++) {
+        const cross: Pt[] = []
+        for (let j = 0; j < i; j++) {
+          const pj = routes.get(ids[j])!
+          for (let t = 0; t < pj.length - 1; t++) {
+            const X = segIntersect(pi[s], pi[s + 1], pj[t], pj[t + 1])
+            if (X) cross.push(X)
+          }
+        }
+        h[s] = cross
+      }
+      hops.set(ids[i], h)
     }
-    return d
-  }
+    return { routes, hops }
+  }, [edges, edgeEndpoints])
 
-  // Distance d'un point à un segment (pour insérer un waypoint au bon endroit).
   function distToSeg(p: Pt, a: Pt, b: Pt): number {
     const dx = b.x - a.x, dy = b.y - a.y
     const len2 = dx * dx + dy * dy || 1
@@ -275,10 +518,8 @@ export default function FlowCanvas({
     return Math.hypot(p.x - px, p.y - py)
   }
 
-  // Ajoute un point de passage à une arête, inséré sur le segment le plus proche.
   const addWaypointAt = (e: WorkflowEdge, world: Pt) => {
-    const ep = edgePoints(e); if (!ep) return
-    const { pts } = ep
+    const pts = edgeGeom.routes.get(e.id); if (!pts) return
     let best = 0, bestD = Infinity
     for (let i = 0; i < pts.length - 1; i++) {
       const dd = distToSeg(world, pts[i], pts[i + 1])
@@ -295,6 +536,38 @@ export default function FlowCanvas({
     onSetWaypoints(e.id, wps)
   }
 
+  // ── Minimap ───────────────────────────────────────────────────
+  const MM_W = 168, MM_H = 116, MM_PAD = 8
+  const renderMinimap = () => {
+    const b = contentBounds()
+    if (!b) return null
+    const bw = (b.maxX - b.minX) || 1, bh = (b.maxY - b.minY) || 1
+    const scale = Math.min((MM_W - MM_PAD * 2) / bw, (MM_H - MM_PAD * 2) / bh)
+    const ox = MM_PAD - b.minX * scale, oy = MM_PAD - b.minY * scale
+    const jump = (e: React.MouseEvent) => {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const wx = (e.clientX - r.left - ox) / scale, wy = (e.clientY - r.top - oy) / scale
+      const cont = containerRef.current!.getBoundingClientRect()
+      setVp(v => ({ ...v, tx: cont.width / 2 - wx * v.scale, ty: cont.height / 2 - wy * v.scale }))
+    }
+    return (
+      <div className="absolute bottom-3 left-3 bg-white/90 border border-[#dadce0] rounded-lg shadow-sm overflow-hidden"
+        style={{ width: MM_W, height: MM_H }} onPointerDown={e => e.stopPropagation()}>
+        <svg width={MM_W} height={MM_H} className="cursor-pointer" onClick={jump}>
+          {notes.map(n => (
+            <rect key={n.id} x={ox + n.position.x * scale} y={oy + n.position.y * scale}
+              width={n.width * scale} height={n.height * scale} fill={n.color} opacity={0.5} rx={1} />
+          ))}
+          {nodes.map(n => {
+            const meta = metas.get(n.type)
+            return <rect key={n.id} x={ox + n.position.x * scale} y={oy + n.position.y * scale}
+              width={NODE_W * scale} height={NODE_H * scale} fill={meta?.color ?? '#80868b'} rx={1.5} />
+          })}
+        </svg>
+      </div>
+    )
+  }
+
   return (
     <div
       ref={containerRef}
@@ -307,27 +580,77 @@ export default function FlowCanvas({
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
       onAuxClick={e => { if (e.button === 1) e.preventDefault() }}
-      onContextMenu={e => openMenu(e, canvasMenu())}
+      onContextMenu={e => openMenu(e, canvasMenu(toWorld(e.clientX, e.clientY)))}
     >
       <div style={{ position: 'absolute', transform: `translate(${vp.tx}px, ${vp.ty}px) scale(${vp.scale})`, transformOrigin: '0 0' }}>
+        {/* Notes autocollantes (derrière les nœuds) */}
+        {notes.map(note => (
+          <div key={note.id} className="absolute rounded-md shadow-sm flex flex-col"
+            style={{ left: note.position.x, top: note.position.y, width: note.width, height: note.height, background: note.color, border: '1px solid rgba(0,0,0,0.08)' }}
+            onContextMenu={e => openMenu(e, [
+              { type: 'action', label: t('ctx_delete_note', { defaultValue: 'Supprimer la note' }), icon: ic('Trash2'), onClick: () => onDeleteNote(note.id) },
+            ])}
+          >
+            <div className="h-5 cursor-grab flex items-center px-1.5 shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}
+              onPointerDown={e => {
+                if (e.button !== 0) return
+                e.stopPropagation()
+                noteDrag.current = { id: note.id, startX: e.clientX, startY: e.clientY, origX: note.position.x, origY: note.position.y }
+                ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+              }}
+            >
+              <Icons.GripHorizontal size={12} className="text-black/30" />
+            </div>
+            <textarea
+              className="flex-1 w-full resize-none bg-transparent outline-none px-2 py-1 text-[12px] text-[#3c4043] leading-snug"
+              value={note.text}
+              placeholder={t('note_placeholder', { defaultValue: 'Écrire une note…' })}
+              onChange={e => onEditNote(note.id, e.target.value)}
+              onPointerDown={e => e.stopPropagation()}
+            />
+            <div className="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize"
+              onPointerDown={e => {
+                if (e.button !== 0) return
+                e.stopPropagation()
+                noteResize.current = { id: note.id, startX: e.clientX, startY: e.clientY, origW: note.width, origH: note.height }
+                ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+              }}
+            >
+              <Icons.GripVertical size={10} className="text-black/25 rotate-45" />
+            </div>
+          </div>
+        ))}
+
         {/* Arêtes */}
         <svg style={{ position: 'absolute', overflow: 'visible', pointerEvents: 'none', left: 0, top: 0 }}>
           {edges.map(e => {
-            const d = edgePath(e)
-            if (!d) return null
+            const pts = edgeGeom.routes.get(e.id)
+            if (!pts) return null
+            const d = roundedPath(pts, edgeGeom.hops.get(e.id))
             const log = logs.get(e.target)
             const color = log?.status === 'success' ? '#1e8e3e' : log?.status === 'error' ? '#d93025' : '#5f6368'
+            // Point milieu (insertion du bouton +).
+            const mi = Math.floor((pts.length - 1) / 2)
+            const mid = pts[mi]
+            const midNext = pts[mi + 1] ?? mid
+            const mx = (mid.x + midNext.x) / 2, my = (mid.y + midNext.y) / 2
             return (
-              <g key={e.id}>
+              <g key={e.id} onPointerEnter={() => setHoverEdge(e.id)} onPointerLeave={() => setHoverEdge(h => h === e.id ? null : h)}>
                 <path d={d} stroke={color} strokeWidth={2} fill="none" />
-                {/* Zone de clic épaisse : double-clic = ajoute un point, clic droit = menu. */}
                 <path
                   d={d} stroke="transparent" strokeWidth={16} fill="none"
                   style={{ pointerEvents: 'stroke', cursor: 'copy' }}
                   onDoubleClick={ev => { ev.stopPropagation(); addWaypointAt(e, toWorld(ev.clientX, ev.clientY)) }}
                   onContextMenu={ev => openMenu(ev, edgeMenu(e, toWorld(ev.clientX, ev.clientY)))}
                 />
-                {/* Poignées des points de passage : glisser pour déplacer, clic droit / double-clic = retirer. */}
+                {/* Bouton + (insérer un nœud sur la connexion) — au survol. */}
+                {hoverEdge === e.id && (
+                  <g style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                    onClick={ev => { ev.stopPropagation(); onInsertOnEdge(e.id) }}>
+                    <circle cx={mx} cy={my} r={9} fill="#e8824a" />
+                    <path d={`M ${mx - 4} ${my} H ${mx + 4} M ${mx} ${my - 4} V ${my + 4}`} stroke="#fff" strokeWidth={2} />
+                  </g>
+                )}
                 {(e.waypoints ?? []).map((wp, i) => (
                   <circle
                     key={i} cx={wp.x} cy={wp.y} r={5}
@@ -348,6 +671,34 @@ export default function FlowCanvas({
               </g>
             )
           })}
+
+          {/* Arêtes IA (sous-nœud ↔ agent) : courbe verticale en pointillés. */}
+          {edges.map(e => {
+            const s = byId(e.source), tg = byId(e.target)
+            if (!s || !tg) return null
+            const sm = metas.get(s.type), tm = metas.get(tg.type)
+            if (!sm?.aiOutput || !tm?.subInputs) return null
+            const idx = tm.subInputs.findIndex(si => si.id === (e.target_port ?? ''))
+            if (idx < 0) return null
+            const ax = tg.position.x + subPortX(idx, tm.subInputs.length)
+            const ay = tg.position.y + nodeBoxHeight(tg, tm, !!logs.get(tg.id))
+            const bx = s.position.x + NODE_W / 2, by = s.position.y
+            const k = Math.max(30, Math.abs(by - ay) / 2)
+            const log = logs.get(s.id)
+            const color = log?.status === 'error' ? '#d93025' : '#9aa0a6'
+            return <path key={`ai-${e.id}`} d={`M ${ax} ${ay} C ${ax} ${ay + k}, ${bx} ${by - k}, ${bx} ${by}`}
+              stroke={color} strokeWidth={1.5} strokeDasharray="4 4" fill="none" />
+          })}
+
+          {/* Connexion fantôme pendant le glisser-pour-connecter */}
+          {connectDrag && ghostEnd && (
+            <path d={roundedPath(orthRoute({ x: connectDrag.sx, y: connectDrag.sy }, ghostEnd))} stroke="#e8824a" strokeWidth={2} strokeDasharray="5 4" fill="none" />
+          )}
+          {/* Fantôme de connexion IA */}
+          {aiDrag && ghostEnd && (
+            <path d={`M ${aiDrag.sx} ${aiDrag.sy} C ${aiDrag.sx} ${(aiDrag.sy + ghostEnd.y) / 2}, ${ghostEnd.x} ${(aiDrag.sy + ghostEnd.y) / 2}, ${ghostEnd.x} ${ghostEnd.y}`}
+              stroke="#6750a4" strokeWidth={2} strokeDasharray="4 4" fill="none" />
+          )}
         </svg>
 
         {/* Nœuds */}
@@ -355,48 +706,141 @@ export default function FlowCanvas({
           const meta = metas.get(n.type)
           const outs = outputs(meta)
           const log = logs.get(n.id)
-          const ring = log?.status === 'success' ? 'ring-2 ring-green-500' : log?.status === 'error' ? 'ring-2 ring-red-500' : ''
-          const hasInput = (meta?.inputs ?? 1) > 0
+          const aiOut = meta?.aiOutput          // sous-nœud fournisseur (modèle/mémoire/outil/parser)
+          const subInputs = meta?.subInputs ?? [] // ports de sous-entrée (agent)
+          const hasInput = (meta?.inputs ?? 1) > 0 && !aiOut
+          const disabled = !!n.settings?.disabled
+          const summary = nodeSummary(n, meta)
+          const isTrigger = meta?.category === 'trigger'
+          const ring = selectedIds.has(n.id) ? 'ring-2 ring-[#e8824a]'
+            : log?.status === 'success' ? 'ring-2 ring-green-500'
+            : log?.status === 'error' ? 'ring-2 ring-red-500' : ''
+          // Nombre d'éléments en sortie (façon n8n : « N éléments »).
+          const out = log?.output_data
+          const itemCount = Array.isArray(out) ? out.length : null
           return (
             <div
               key={n.id}
-              className={clsx('absolute rounded-lg border border-[#dadce0] bg-[#ffffff] shadow-lg select-none', selectedIds.has(n.id) && 'ring-2 ring-[#e8824a]', ring)}
+              data-node={n.id}
+              className={clsx('absolute select-none', disabled && 'opacity-55')}
               style={{ left: n.position.x, top: n.position.y, width: NODE_W }}
+              onPointerEnter={() => setHoverNode(n.id)}
+              onPointerLeave={() => setHoverNode(h => h === n.id ? null : h)}
               onPointerDown={e => onNodePointerDown(e, n)}
               onContextMenu={e => { if (!selectedIds.has(n.id)) onSelectOne(n.id); openMenu(e, nodeMenu(n)) }}
+              title={n.settings?.note || undefined}
             >
-              <div className="flex items-center gap-2 px-3 py-2 rounded-t-lg" style={{ background: meta?.color ?? '#80868b' }}>
-                <LucideIcon name={meta?.icon ?? 'Box'} size={16} color="#fff" />
-                <span className="text-white text-sm font-medium truncate">{n.name || meta?.name || n.type}</span>
-              </div>
-              <div className="px-3 py-2 text-[11px] text-[#80868b] truncate">{meta?.name ?? n.type}</div>
+              {/* Barre d'actions au survol (façon n8n). Conteneur collé au bord supérieur
+                  du nœud (bottom-full, pleine largeur) → zone de survol CONTINUE : pas de
+                  vide entre le nœud et les boutons, donc la barre ne disparaît plus. */}
+              {hoverNode === n.id && !connectDrag && (
+                <div className="absolute bottom-full left-0 right-0 flex justify-center pb-1.5 z-10"
+                  onPointerDown={e => e.stopPropagation()}>
+                  <div className="flex items-center gap-0.5 bg-white border border-[#dadce0] rounded-md shadow px-0.5 py-0.5">
+                    <button className="p-1 text-[#5f6368] hover:bg-[#e8eaed] rounded" title={disabled ? t('ctx_enable', { defaultValue: 'Activer' }) : t('ctx_disable', { defaultValue: 'Désactiver' })} onClick={() => onToggleDisabled(n.id)}>
+                      {disabled ? <Icons.Power size={14} /> : <Icons.PowerOff size={14} />}
+                    </button>
+                    <button className="p-1 text-[#5f6368] hover:bg-[#e8eaed] rounded" title={t('ctx_duplicate', { defaultValue: 'Dupliquer' })} onClick={() => onDuplicateNode(n.id)}>
+                      <Icons.CopyPlus size={14} />
+                    </button>
+                    <button className="p-1 text-red-600 hover:bg-red-50 rounded" title={t('ctx_delete', { defaultValue: 'Supprimer' })} onClick={() => onDeleteNode(n.id)}>
+                      <Icons.Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
-              {/* Port d'entrée */}
+              <div className={clsx('rounded-lg border bg-white shadow-lg overflow-hidden', disabled ? 'border-dashed border-[#9aa0a6]' : 'border-[#dadce0]', ring)}>
+                {/* En-tête : tuile icône colorée + titre + badges */}
+                <div className="flex items-center gap-2 px-2.5 py-2">
+                  <span className={clsx('w-8 h-8 rounded-md flex items-center justify-center shrink-0', isTrigger && 'rounded-l-2xl')} style={{ background: meta?.color ?? '#80868b' }}>
+                    <LucideIcon name={meta?.icon ?? 'Box'} size={17} color="#fff" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[13px] font-medium text-[#202124] truncate">{n.name || meta?.name || n.type}</span>
+                      {n.settings?.on_error === 'continue' && <Icons.ShieldCheck size={11} className="text-[#1e8e3e] shrink-0" />}
+                      {!!n.settings?.retry_max && <Icons.RefreshCw size={11} className="text-[#80868b] shrink-0" />}
+                      {n.settings?.note && <Icons.StickyNote size={11} className="text-[#f9ab00] shrink-0" />}
+                    </div>
+                    <div className="text-[10px] text-[#80868b] truncate">{meta?.name ?? n.type}</div>
+                  </div>
+                </div>
+                {/* Sous-titre : résumé de la configuration */}
+                {summary && (
+                  <div className="px-2.5 pb-1.5 -mt-0.5 text-[10px] font-mono text-[#5f6368] truncate">{summary}</div>
+                )}
+                {/* Pied d'exécution : statut + durée + nombre d'éléments */}
+                {log && (
+                  <div className={clsx('flex items-center gap-1.5 px-2.5 py-1 text-[10px] border-t',
+                    log.status === 'success' ? 'bg-green-50 border-green-100 text-green-700' : 'bg-red-50 border-red-100 text-red-700')}>
+                    {log.status === 'success' ? <Icons.Check size={11} /> : <Icons.X size={11} />}
+                    {log.duration_ms != null && <span>{log.duration_ms} ms</span>}
+                    {itemCount != null && <span className="text-[#5f6368]">· {itemCount} {t('items', { defaultValue: 'éléments' })}</span>}
+                  </div>
+                )}
+                {disabled && (
+                  <div className="px-2.5 py-0.5 text-[9px] uppercase tracking-wider text-[#9aa0a6] border-t border-dashed border-[#dadce0]">{t('disabled', { defaultValue: 'Désactivé' })}</div>
+                )}
+              </div>
+
+              {/* Port d'entrée — cible du glisser-pour-connecter (data-input). */}
               {hasInput && (
                 <div
-                  className="absolute -left-2 w-3.5 h-3.5 rounded-full border-2 border-[#f1f3f4] bg-[#80868b] hover:bg-[#e8824a] cursor-crosshair"
-                  style={{ top: HEADER_Y - 7 }}
-                  onClick={e => clickInput(e, n.id)}
+                  data-input={n.id}
+                  className={clsx('absolute -left-2 w-3.5 h-3.5 rounded-full border-2 border-[#f1f3f4] cursor-crosshair',
+                    connectDrag && connectDrag.source !== n.id ? 'bg-[#e8824a] scale-125' : 'bg-[#80868b] hover:bg-[#e8824a]')}
+                  style={{ top: inPortYAt(n, meta, !!log) - 7, transition: 'transform .1s' }}
                   title={t('port_in')}
                 />
               )}
-              {/* Ports de sortie */}
-              {outs.map((port, i) => (
-                <div key={port} className="absolute -right-2 flex items-center" style={{ top: (outs.length <= 1 ? HEADER_Y : PORT_BASE + i * PORT_GAP) - 7 }}>
+              {/* Ports de sortie données — masqués pour les sous-nœuds IA. */}
+              {!aiOut && outs.map((port, i) => (
+                <div key={port} className="absolute -right-2 flex items-center" style={{ top: outPortYAt(n, meta, port, !!log) - 7 }}>
                   {outs.length > 1 && <span className="absolute right-4 text-[9px] text-[#80868b] whitespace-nowrap">{meta?.outputs[i]?.label}</span>}
                   <div
-                    className={clsx('w-3.5 h-3.5 rounded-full border-2 border-[#f1f3f4] cursor-crosshair', connecting?.source === n.id && connecting?.port === port ? 'bg-[#e8824a]' : 'bg-[#80868b] hover:bg-[#e8824a]')}
-                    onClick={e => clickOutput(e, n.id, port)}
+                    className={clsx('w-3.5 h-3.5 rounded-full border-2 border-[#f1f3f4] cursor-crosshair', connectDrag?.source === n.id && connectDrag?.port === port ? 'bg-[#e8824a]' : 'bg-[#80868b] hover:bg-[#e8824a]')}
+                    onPointerDown={e => startConnect(e, n.id, port)}
                     title={t('port_out')}
                   />
                 </div>
               ))}
+
+              {/* Sous-nœud IA : port de sortie EN HAUT (se branche sur un agent). */}
+              {aiOut && (
+                <div
+                  data-ai-out={`${n.id}|${aiOut}`}
+                  onPointerDown={e => startAiFromSub(e, n.id, aiOut)}
+                  className="absolute left-1/2 -translate-x-1/2 -top-2 w-3.5 h-3.5 rounded-full border-2 border-[#f1f3f4] bg-[#6750a4] hover:scale-125 cursor-crosshair"
+                  style={{ transition: 'transform .1s' }}
+                  title={aiOut}
+                />
+              )}
+
+              {/* Agent IA : ports de SOUS-ENTRÉE répartis sous le nœud. */}
+              {subInputs.map((si, i) => {
+                const px = subPortX(i, subInputs.length)
+                const py = nodeBoxHeight(n, meta, !!log)
+                const filled = edges.some(ed => ed.target === n.id && ed.target_port === si.id)
+                return (
+                  <div key={si.id} className="absolute flex flex-col items-center" style={{ left: px - 6, top: py - 2 }}>
+                    <div
+                      data-ai-in={`${n.id}|${si.id}|${si.kind}`}
+                      onPointerDown={e => startAiFromAgent(e, n.id, si.id, si.kind, n.position.x + px, n.position.y + py)}
+                      className={clsx('w-3 h-3 rotate-45 border-2 border-[#f1f3f4] cursor-crosshair',
+                        aiDrag?.sub && aiDrag.kind === si.kind ? 'bg-[#6750a4] scale-125' : filled ? 'bg-[#6750a4]' : 'bg-[#b3a4d4] hover:bg-[#6750a4]')}
+                      style={{ transition: 'transform .1s' }}
+                    />
+                    <span className="text-[8px] text-[#80868b] whitespace-nowrap mt-0.5">{si.label}{si.required && <span className="text-red-400">*</span>}</span>
+                  </div>
+                )
+              })}
             </div>
           )
         })}
       </div>
 
-      {/* Rectangle de sélection (clic gauche sur le fond) */}
+      {/* Rectangle de sélection */}
       {mrect && (mrect.w > 1 || mrect.h > 1) && (
         <div
           className="absolute border border-[#e8824a] bg-[#e8824a]/10 pointer-events-none rounded-sm"
@@ -404,18 +848,21 @@ export default function FlowCanvas({
         />
       )}
 
-      {connecting && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-[#e8824a] text-white text-xs px-3 py-1 rounded-full shadow">
+      {connectDrag && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-[#e8824a] text-white text-xs px-3 py-1 rounded-full shadow pointer-events-none">
           {t('connect_hint')}
         </div>
       )}
 
+      {renderMinimap()}
+
       {/* Contrôle zoom */}
       <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-[#ffffff] border border-[#dadce0] rounded-lg px-2 py-1 text-[#5f6368] text-xs">
-        <button className="px-1.5 hover:text-[#202124]" onClick={() => setVp(v => ({ ...v, scale: Math.max(0.25, v.scale * 0.9) }))}>−</button>
+        <button className="px-1.5 hover:text-[#202124]" onClick={() => zoomBy(0.9)}>−</button>
         <span className="w-10 text-center">{Math.round(vp.scale * 100)}%</span>
-        <button className="px-1.5 hover:text-[#202124]" onClick={() => setVp(v => ({ ...v, scale: Math.min(2.5, v.scale * 1.1) }))}>+</button>
-        <button className="px-1.5 hover:text-[#202124]" onClick={() => setVp({ tx: 40, ty: 40, scale: 1 })} title={t('reset')}>⟲</button>
+        <button className="px-1.5 hover:text-[#202124]" onClick={() => zoomBy(1.1)}>+</button>
+        <button className="px-1.5 hover:text-[#202124]" onClick={fitToContent} title={t('ctx_fit', { defaultValue: 'Ajuster' })}>⤢</button>
+        <button className="px-1.5 hover:text-[#202124]" onClick={resetView} title={t('reset')}>⟲</button>
       </div>
 
       {menu && (

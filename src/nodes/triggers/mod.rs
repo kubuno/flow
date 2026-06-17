@@ -3,9 +3,16 @@
 //! (recevoir un webhook, matcher un cron, écouter un événement) est assuré par le
 //! scheduler / les handlers, pas par cette méthode `execute`.
 
+pub mod chat;
 pub mod cron;
+pub mod email;
+pub mod error;
+pub mod execute_workflow;
+pub mod form;
 pub mod kubuno_event;
 pub mod manual;
+pub mod mcp;
+pub mod sse;
 pub mod webhook;
 
 use serde_json::Value;

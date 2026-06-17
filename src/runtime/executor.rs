@@ -16,10 +16,11 @@ use crate::runtime::core_proxy::CoreProxy;
 use crate::runtime::resolver;
 
 pub struct Executor {
-    pub db:       PgPool,
-    pub registry: Arc<NodeRegistry>,
-    pub proxy:    Arc<CoreProxy>,
-    pub settings: Arc<Settings>,
+    pub db:           PgPool,
+    pub registry:     Arc<NodeRegistry>,
+    pub proxy:        Arc<CoreProxy>,
+    pub settings:     Arc<Settings>,
+    pub files_client: Arc<crate::files_client::FilesClient>,
 }
 
 #[derive(Debug)]
@@ -59,10 +60,13 @@ impl Executor {
         };
 
         let node_ctx = NodeContext {
-            proxy:    &self.proxy,
-            user_id:  owner_id,
-            db:       &self.db,
-            settings: &self.settings,
+            proxy:        &self.proxy,
+            user_id:      owner_id,
+            db:           &self.db,
+            settings:     &self.settings,
+            registry:     &self.registry,
+            files_client: &self.files_client,
+            depth:        0,
         };
 
         let mut outputs: HashMap<String, Value> = HashMap::new();
@@ -70,14 +74,25 @@ impl Executor {
         let mut executed = 0i32;
         let node_timeout = Duration::from_secs(self.settings.runtime.node_timeout_secs.max(1));
 
+        // Un nœud est-il un sous-nœud fournisseur IA (modèle/mémoire/outil/parser) ?
+        let is_provider = |t: &str| self.registry.ai_output(t).is_some();
+
         for node_id in &order {
             let Some(node) = by_id.get(node_id.as_str()) else { continue };
+
+            // Sous-nœud fournisseur : jamais exécuté dans le flux principal ; sa config
+            // est consommée par l'agent via son port de sous-entrée.
+            if is_provider(&node.node_type) { continue; }
+
             let meta = self.registry.meta(&node.node_type);
             let is_trigger = meta.as_ref().map(|m| m.is_trigger()).unwrap_or(false);
 
             // Activation : trigger inconditionnel, sinon au moins une arête entrante vive.
+            // Les arêtes venant d'un sous-nœud IA ne comptent PAS comme flux de données.
             let incoming: Vec<&WorkflowEdge> = definition.edges.iter()
-                .filter(|e| &e.target == node_id).collect();
+                .filter(|e| &e.target == node_id
+                    && by_id.get(e.source.as_str()).map(|s| !is_provider(&s.node_type)).unwrap_or(true))
+                .collect();
             let active_incoming: Vec<&WorkflowEdge> = incoming.iter()
                 .copied().filter(|e| live_edges.contains(&e.id)).collect();
 
@@ -88,13 +103,27 @@ impl Executor {
             // Donnée d'entrée : sortie des prédécesseurs vivants.
             let input = build_input(&active_incoming, &outputs, &trigger_data);
 
-            // Contexte de résolution d'expressions.
-            let full = json!({
-                "trigger": trigger_data,
-                "nodes":   &outputs,
-                "input":   input,
-                "json":    input,
-            });
+            // Nœud désactivé : ignoré, l'entrée passe telle quelle vers toutes les sorties.
+            if node.settings.disabled {
+                outputs.insert(node.id.clone(), input.clone());
+                for e in definition.edges.iter().filter(|e| e.source == node.id) {
+                    live_edges.insert(e.id.clone());
+                }
+                continue;
+            }
+
+            // Contexte de résolution d'expressions (variables n8n-like : $json, $now…).
+            let mut ctx_map = serde_json::Map::new();
+            ctx_map.insert("trigger".into(), trigger_data.clone());
+            ctx_map.insert("nodes".into(), json!(&outputs));
+            ctx_map.insert("input".into(), input.clone());
+            ctx_map.insert("json".into(), input.clone());
+            ctx_map.insert("$json".into(), input.clone());
+            ctx_map.insert("$input".into(), input.clone());
+            ctx_map.insert("$workflow".into(), json!({ "id": workflow_id.to_string() }));
+            ctx_map.insert("$execution".into(), json!({ "id": execution_id.to_string(), "mode": "trigger" }));
+            crate::runtime::expr::with_now(&mut ctx_map);
+            let full = Value::Object(ctx_map);
 
             let exec_ctx = ExecutionContext {
                 execution_id,
@@ -114,15 +143,66 @@ impl Executor {
                 return ExecOutcome { status: "error", nodes_executed: executed, nodes_total, error_message: Some(msg), retryable: false };
             };
 
-            // Résolution des expressions de la config.
-            let resolved = resolver::resolve_value(&node.config, &exec_ctx.full);
+            // Résolution des expressions de la config, puis injection des credentials
+            // (les champs Credential = id → remplacés par leur payload déchiffré).
+            let mut resolved = resolver::resolve_value(&node.config, &exec_ctx.full);
+            crate::services::credentials::inject_into_config(
+                &self.registry, &self.db, &self.settings.core.internal_secret,
+                owner_id, &node.node_type, &mut resolved,
+            ).await;
+
+            // Agent IA : rassembler les sous-nœuds branchés (modèle/mémoire/outils/parser)
+            // par port, résoudre leur config (+ credentials), injecter sous `__sub`.
+            let subs = self.registry.sub_inputs(&node.node_type);
+            if !subs.is_empty() {
+                let mut sub_map = serde_json::Map::new();
+                for si in &subs {
+                    let mut items = Vec::new();
+                    for e in definition.edges.iter().filter(|e| &e.target == node_id && e.target_port.as_deref() == Some(si.id.as_str())) {
+                        if let Some(src) = by_id.get(e.source.as_str()) {
+                            let mut sc = resolver::resolve_value(&src.config, &exec_ctx.full);
+                            crate::services::credentials::inject_into_config(
+                                &self.registry, &self.db, &self.settings.core.internal_secret,
+                                owner_id, &src.node_type, &mut sc,
+                            ).await;
+                            items.push(json!({ "type": src.node_type, "name": src.name, "config": sc }));
+                        }
+                    }
+                    sub_map.insert(si.id.clone(), Value::Array(items));
+                }
+                if let Some(obj) = resolved.as_object_mut() {
+                    obj.insert("__sub".into(), Value::Object(sub_map));
+                }
+            }
+
+            // Tentatives par nœud (retry-on-fail). 0 retry → 1 tentative.
+            let max_tries = node.settings.retry_max.unwrap_or(0).min(5) + 1;
+            let retry_delay = Duration::from_millis(node.settings.retry_delay_ms.unwrap_or(1000).min(60_000));
 
             let node_start = Instant::now();
-            let result = tokio::time::timeout(node_timeout, executor.execute(resolved, &exec_ctx, &node_ctx)).await;
+            let mut local_attempt = 0u32;
+            // (output, OK) | Err((message, retryable_au_niveau_job, stop_explicite))
+            let outcome: Result<crate::nodes::trait_::NodeOutput, (String, bool, bool)> = loop {
+                local_attempt += 1;
+                let r = tokio::time::timeout(node_timeout, executor.execute(resolved.clone(), &exec_ctx, &node_ctx)).await;
+                match r {
+                    Ok(Ok(output)) => break Ok(output),
+                    Ok(Err(NodeError::Stopped(msg))) => break Err((msg, false, true)),
+                    Ok(Err(e)) => {
+                        if local_attempt < max_tries { tokio::time::sleep(retry_delay).await; continue; }
+                        break Err((e.to_string(), e.is_retryable(), false));
+                    }
+                    Err(_) => {
+                        if local_attempt < max_tries { tokio::time::sleep(retry_delay).await; continue; }
+                        let msg = format!("Nœud « {} » : délai dépassé", node.name.clone().unwrap_or(node.node_type.clone()));
+                        break Err((msg, true, false));
+                    }
+                }
+            };
             let node_dur = node_start.elapsed();
 
-            match result {
-                Ok(Ok(output)) => {
+            match outcome {
+                Ok(output) => {
                     executed += 1;
                     self.log_node(execution_id, node, "success", Some(&input), Some(&output.data), None, None, attempt, node_dur).await;
                     outputs.insert(node.id.clone(), output.data.clone());
@@ -133,24 +213,21 @@ impl Executor {
                         }
                     }
                 }
-                Ok(Err(NodeError::Stopped(msg))) => {
-                    // Stop explicite (mode erreur) → exécution en erreur, non retryable.
+                // Continuer-sur-erreur (sauf Stop explicite) : journalise l'erreur mais poursuit
+                // le flux avec `{ error }` en sortie, toutes les arêtes sortantes actives.
+                Err((msg, _retryable, is_stop)) if !is_stop && node.settings.continues_on_error() => {
+                    executed += 1;
                     self.log_node(execution_id, node, "error", Some(&input), None, Some(&msg), None, attempt, node_dur).await;
-                    self.finalize(execution_id, "error", executed, nodes_total, Some(&msg), start).await;
-                    return ExecOutcome { status: "error", nodes_executed: executed, nodes_total, error_message: Some(msg), retryable: false };
+                    let errout = json!({ "error": msg });
+                    outputs.insert(node.id.clone(), errout);
+                    for e in definition.edges.iter().filter(|e| e.source == node.id) {
+                        live_edges.insert(e.id.clone());
+                    }
                 }
-                Ok(Err(e)) => {
-                    let retryable = e.is_retryable();
-                    let msg = e.to_string();
+                Err((msg, retryable, _is_stop)) => {
                     self.log_node(execution_id, node, "error", Some(&input), None, Some(&msg), None, attempt, node_dur).await;
                     self.finalize(execution_id, "error", executed, nodes_total, Some(&msg), start).await;
                     return ExecOutcome { status: "error", nodes_executed: executed, nodes_total, error_message: Some(msg), retryable };
-                }
-                Err(_) => {
-                    let msg = format!("Nœud « {} » : délai dépassé", node.name.clone().unwrap_or(node.node_type.clone()));
-                    self.log_node(execution_id, node, "error", Some(&input), None, Some(&msg), None, attempt, node_dur).await;
-                    self.finalize(execution_id, "error", executed, nodes_total, Some(&msg), start).await;
-                    return ExecOutcome { status: "error", nodes_executed: executed, nodes_total, error_message: Some(msg), retryable: true };
                 }
             }
         }
@@ -291,4 +368,107 @@ fn topo_sort(nodes: &[WorkflowNode], edges: &[WorkflowEdge]) -> Result<Vec<Strin
     } else {
         Err(())
     }
+}
+
+/// Exécute un workflow « en ligne » (sans persistance ni logs) et retourne la
+/// sortie du dernier nœud. Utilisé par le nœud Sous-workflow ; `parent.depth`
+/// borne l'imbrication pour empêcher toute récursion infinie entre workflows.
+pub async fn run_workflow_inline(
+    parent:       &NodeContext<'_>,
+    owner_id:     Uuid,
+    workflow_id:  Uuid,
+    definition:   &WorkflowDefinition,
+    trigger_data: Value,
+) -> Result<Value, String> {
+    if parent.depth > 5 {
+        return Err("Imbrication de sous-workflows trop profonde (max 5)".into());
+    }
+    let child = NodeContext {
+        proxy:        parent.proxy,
+        user_id:      owner_id,
+        db:           parent.db,
+        settings:     parent.settings,
+        registry:     parent.registry,
+        files_client: parent.files_client,
+        depth:        parent.depth + 1,
+    };
+
+    let by_id: HashMap<&str, &WorkflowNode> =
+        definition.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let order = topo_sort(&definition.nodes, &definition.edges)
+        .map_err(|_| "Cycle détecté dans le sous-workflow".to_string())?;
+
+    let mut outputs: HashMap<String, Value> = HashMap::new();
+    let mut live_edges: HashSet<String> = HashSet::new();
+    let mut last_output = trigger_data.clone();
+    let node_timeout = Duration::from_secs(parent.settings.runtime.node_timeout_secs.max(1));
+
+    for node_id in &order {
+        let Some(node) = by_id.get(node_id.as_str()) else { continue };
+        let meta = parent.registry.meta(&node.node_type);
+        let is_trigger = meta.as_ref().map(|m| m.is_trigger()).unwrap_or(false);
+
+        let incoming: Vec<&WorkflowEdge> = definition.edges.iter().filter(|e| &e.target == node_id).collect();
+        let active_incoming: Vec<&WorkflowEdge> = incoming.iter().copied().filter(|e| live_edges.contains(&e.id)).collect();
+        if !is_trigger && active_incoming.is_empty() && !incoming.is_empty() {
+            continue;
+        }
+
+        let input = build_input(&active_incoming, &outputs, &trigger_data);
+
+        if node.settings.disabled {
+            outputs.insert(node.id.clone(), input.clone());
+            last_output = input.clone();
+            for e in definition.edges.iter().filter(|e| e.source == node.id) {
+                live_edges.insert(e.id.clone());
+            }
+            continue;
+        }
+
+        let mut ctx_map = serde_json::Map::new();
+        ctx_map.insert("trigger".into(), trigger_data.clone());
+        ctx_map.insert("nodes".into(), json!(&outputs));
+        ctx_map.insert("input".into(), input.clone());
+        ctx_map.insert("json".into(), input.clone());
+        ctx_map.insert("$json".into(), input.clone());
+        ctx_map.insert("$input".into(), input.clone());
+        ctx_map.insert("$workflow".into(), json!({ "id": workflow_id.to_string() }));
+        crate::runtime::expr::with_now(&mut ctx_map);
+        let full = Value::Object(ctx_map);
+
+        let exec_ctx = ExecutionContext {
+            execution_id: Uuid::nil(),
+            workflow_id,
+            owner_id,
+            current_node_id: node.id.clone(),
+            attempt: 1,
+            input: input.clone(),
+            full: full.clone(),
+        };
+
+        let Some(executor) = parent.registry.get(&node.node_type) else {
+            return Err(format!("Type de nœud inconnu : {}", node.node_type));
+        };
+        let mut resolved = resolver::resolve_value(&node.config, &full);
+        crate::services::credentials::inject_into_config(
+            parent.registry, parent.db, &parent.settings.core.internal_secret,
+            owner_id, &node.node_type, &mut resolved,
+        ).await;
+        let result = tokio::time::timeout(node_timeout, executor.execute(resolved, &exec_ctx, &child)).await;
+        match result {
+            Ok(Ok(output)) => {
+                last_output = output.data.clone();
+                outputs.insert(node.id.clone(), output.data.clone());
+                for e in definition.edges.iter().filter(|e| e.source == node.id) {
+                    if edge_live(&output.branches, e) {
+                        live_edges.insert(e.id.clone());
+                    }
+                }
+            }
+            Ok(Err(NodeError::Stopped(msg))) => return Err(msg),
+            Ok(Err(e)) => return Err(e.to_string()),
+            Err(_) => return Err("Sous-workflow : délai dépassé".into()),
+        }
+    }
+    Ok(last_output)
 }

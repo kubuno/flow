@@ -72,13 +72,19 @@ pub async fn create_workflow_file(
     Ok(file.id)
 }
 
-pub async fn read_definition(state: &AppState, user_id: Uuid, file_id: Uuid) -> Result<Value, FlowError> {
-    let (_info, raw) = state.files_client.get_file_content(user_id, file_id).await
-        .map_err(FlowError::Internal)?;
-    let json = gunzip(&raw)?;
+/// Décode des octets `.kbflw` (gzip + JSON) en définition {nodes, edges}.
+/// Permet à un nœud (sous-workflow) de lire le contenu sans passer par AppState.
+pub fn parse_definition_bytes(raw: &[u8]) -> Result<Value, FlowError> {
+    let json = gunzip(raw)?;
     let content = serde_json::from_slice::<Value>(&json)
         .map_err(|e| FlowError::Internal(anyhow::anyhow!("définition illisible: {e}")))?;
     Ok(extract_definition(&content))
+}
+
+pub async fn read_definition(state: &AppState, user_id: Uuid, file_id: Uuid) -> Result<Value, FlowError> {
+    let (_info, raw) = state.files_client.get_file_content(user_id, file_id).await
+        .map_err(FlowError::Internal)?;
+    parse_definition_bytes(&raw)
 }
 
 pub async fn write_definition(state: &AppState, user_id: Uuid, file_id: Uuid, definition: Value) -> Result<(), FlowError> {

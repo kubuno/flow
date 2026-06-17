@@ -68,14 +68,22 @@ pub async fn execute(
             let _ = st.files_client.set_file_protected(owner, fid, true).await;
         }
         let executor = Executor {
-            db:       st.db.clone(),
-            registry: st.registry.clone(),
-            proxy:    st.proxy.clone(),
-            settings: st.settings.clone(),
+            db:           st.db.clone(),
+            registry:     st.registry.clone(),
+            proxy:        st.proxy.clone(),
+            settings:     st.settings.clone(),
+            files_client: st.files_client.clone(),
         };
-        executor.run(execution_id, owner, id, &definition, trigger_data, 1).await;
+        let outcome = executor.run(execution_id, owner, id, &definition, trigger_data, 1).await;
         if let Some(fid) = file_id {
             let _ = st.files_client.set_file_protected(owner, fid, false).await;
+        }
+        // Déclencheur d'erreur sur un run manuel échoué.
+        if outcome.status == "error" {
+            let wf_name = sqlx::query_scalar::<_, String>("SELECT name FROM flow.workflows WHERE id = $1")
+                .bind(id).fetch_optional(&st.db).await.ok().flatten().unwrap_or_default();
+            let msg = outcome.error_message.clone().unwrap_or_default();
+            crate::runtime::scheduler::dispatch_error_workflows(&st, id, &wf_name, owner, execution_id, &msg).await;
         }
     });
 
@@ -182,7 +190,17 @@ pub async fn test_node(
         .ok_or_else(|| FlowError::Validation(format!("Type de nœud inconnu : {}", node.node_type)))?;
 
     let input = body.input_data;
-    let full = json!({ "trigger": input, "nodes": {}, "input": input, "json": input });
+    let mut ctx_map = serde_json::Map::new();
+    ctx_map.insert("trigger".into(), input.clone());
+    ctx_map.insert("nodes".into(), json!({}));
+    ctx_map.insert("input".into(), input.clone());
+    ctx_map.insert("json".into(), input.clone());
+    ctx_map.insert("$json".into(), input.clone());
+    ctx_map.insert("$input".into(), input.clone());
+    ctx_map.insert("$workflow".into(), json!({ "id": id.to_string() }));
+    ctx_map.insert("$execution".into(), json!({ "id": Uuid::nil().to_string(), "mode": "test" }));
+    crate::runtime::expr::with_now(&mut ctx_map);
+    let full = Value::Object(ctx_map);
     let exec_ctx = ExecutionContext {
         execution_id:    Uuid::nil(),
         workflow_id:     id,
@@ -192,9 +210,38 @@ pub async fn test_node(
         input:           input.clone(),
         full: full.clone(),
     };
-    let node_ctx = NodeContext { proxy: &state.proxy, user_id: user.id, db: &state.db, settings: &state.settings };
+    let node_ctx = NodeContext {
+        proxy: &state.proxy, user_id: user.id, db: &state.db, settings: &state.settings,
+        registry: &state.registry, files_client: &state.files_client, depth: 0,
+    };
 
-    let resolved = resolver::resolve_value(&node.config, &full);
+    let mut resolved = resolver::resolve_value(&node.config, &full);
+    crate::services::credentials::inject_into_config(
+        &state.registry, &state.db, &state.settings.core.internal_secret,
+        user.id, &node.node_type, &mut resolved,
+    ).await;
+    // Agent IA : rassembler les sous-nœuds branchés pour que « Tester » fonctionne.
+    let subs = state.registry.sub_inputs(&node.node_type);
+    if !subs.is_empty() {
+        let by_id: std::collections::HashMap<&str, &crate::models::workflow::WorkflowNode> =
+            definition.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+        let mut sub_map = serde_json::Map::new();
+        for si in &subs {
+            let mut items = Vec::new();
+            for e in definition.edges.iter().filter(|e| e.target == node.id && e.target_port.as_deref() == Some(si.id.as_str())) {
+                if let Some(src) = by_id.get(e.source.as_str()) {
+                    let mut sc = resolver::resolve_value(&src.config, &full);
+                    crate::services::credentials::inject_into_config(
+                        &state.registry, &state.db, &state.settings.core.internal_secret,
+                        user.id, &src.node_type, &mut sc,
+                    ).await;
+                    items.push(json!({ "type": src.node_type, "name": src.name, "config": sc }));
+                }
+            }
+            sub_map.insert(si.id.clone(), Value::Array(items));
+        }
+        if let Some(obj) = resolved.as_object_mut() { obj.insert("__sub".into(), Value::Object(sub_map)); }
+    }
     match executor.execute(resolved, &exec_ctx, &node_ctx).await {
         Ok(out) => Ok(Json(json!({ "success": true, "output": out.data }))),
         Err(e)  => Ok(Json(json!({ "success": false, "error": e.to_string() }))),
