@@ -1,7 +1,10 @@
 pub mod core_proxy;
+pub mod email_trigger;
 pub mod executor;
+pub mod expr;
 pub mod queue;
 pub mod resolver;
 pub mod retry;
 pub mod scheduler;
+pub mod sse_trigger;
 pub mod worker;

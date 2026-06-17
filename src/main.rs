@@ -220,6 +220,22 @@ async fn register_with_core(http: &Client, settings: &Settings) {
         "routes":            [{ "method": "*", "path": "/*" }],
         "sidebar_items":     sidebar_items,
         "subscribed_events": subscribed_events,
+        // Outil exposé via le serveur MCP du core : exécute un workflow Flow muni
+        // d'un nœud « Serveur MCP » (trigger.mcp). Le core proxifie vers /mcp/run.
+        "mcp_tools": [{
+            "name":        "flow_run_workflow",
+            "description": "Exécute un workflow Kubuno Flow exposé en MCP et retourne sa sortie.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "workflow_id": { "type": "string", "description": "Identifiant du workflow à exécuter" },
+                    "input":       { "type": "object", "description": "Données d'entrée transmises au workflow" }
+                },
+                "required": ["workflow_id"]
+            },
+            "route":  "/mcp/run",
+            "method": "POST",
+        }],
     });
 
     for attempt in 1u32.. {

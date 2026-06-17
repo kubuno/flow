@@ -1,5 +1,5 @@
-export type NodeCategory = 'trigger' | 'kubuno' | 'logic' | 'external' | 'code'
-export type FieldType = 'text' | 'textarea' | 'expression' | 'number' | 'boolean' | 'select' | 'json' | 'code'
+export type NodeCategory = 'trigger' | 'kubuno' | 'logic' | 'external' | 'code' | 'ai'
+export type FieldType = 'text' | 'textarea' | 'expression' | 'number' | 'boolean' | 'select' | 'json' | 'code' | 'credential'
 
 export interface FieldOption { value: string; label: string }
 
@@ -12,9 +12,41 @@ export interface FieldDef {
   help?: string
   default?: unknown
   options?: FieldOption[]
+  /** Pour un champ credential : types acceptés (CSV). */
+  credentialType?: string
+}
+
+// ── Credentials ──
+export type CredFieldType = 'text' | 'password' | 'select' | 'boolean' | 'number' | 'json'
+export interface CredField {
+  name: string
+  label: string
+  type: CredFieldType
+  required?: boolean
+  placeholder?: string
+  help?: string
+  default?: unknown
+  options?: FieldOption[]
+}
+export interface CredentialType {
+  type: string
+  name: string
+  icon: string
+  category: string
+  fields: CredField[]
+}
+export interface CredentialMeta {
+  id: string
+  name: string
+  type: string
+  created_at: string
+  updated_at: string
 }
 
 export interface PortDef { id: string; label: string }
+
+/** Port d'entrée « sous-nœud » d'un agent IA (modèle, mémoire, outil, parser). */
+export interface SubInput { id: string; label: string; kind: string; required?: boolean; multiple?: boolean }
 
 export interface NodeMeta {
   type: string
@@ -26,9 +58,22 @@ export interface NodeMeta {
   inputs: number
   outputs: PortDef[]
   fields: FieldDef[]
+  /** Ports de sous-entrée (agent IA), affichés sous le nœud. */
+  subInputs?: SubInput[]
+  /** Si défini, ce nœud est un sous-nœud fournisseur du type indiqué (se branche par le haut). */
+  aiOutput?: string
 }
 
 export interface NodePosition { x: number; y: number }
+
+/** Réglages d'exécution par nœud (gestion d'erreur / retry). */
+export interface NodeSettings {
+  on_error?: 'stop' | 'continue'
+  retry_max?: number
+  retry_delay_ms?: number
+  disabled?: boolean
+  note?: string
+}
 
 export interface WorkflowNode {
   id: string
@@ -36,6 +81,7 @@ export interface WorkflowNode {
   name?: string | null
   position: NodePosition
   config: Record<string, unknown>
+  settings?: NodeSettings
 }
 
 export interface WorkflowEdge {
@@ -48,10 +94,25 @@ export interface WorkflowEdge {
   waypoints?: { x: number; y: number }[]
 }
 
+/** Note autocollante (annotation) posée sur le plan de travail. */
+export interface StickyNote {
+  id: string
+  position: NodePosition
+  width: number
+  height: number
+  text: string
+  color: string
+}
+
 export interface WorkflowDefinition {
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
+  notes?: StickyNote[]
 }
+
+/** Une fonction/variable du catalogue d'expressions (autocomplétion). */
+export interface ExprHelpItem { name: string; signature?: string; description: string }
+export interface ExprHelp { functions: ExprHelpItem[]; variables: ExprHelpItem[] }
 
 export interface Workflow {
   id: string

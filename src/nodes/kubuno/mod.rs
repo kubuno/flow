@@ -236,3 +236,42 @@ impl crate::nodes::trait_::NodeExecutor for NotificationNode {
         Ok(NodeOutput::data(json!({ "sent": true })))
     }
 }
+
+// ── Tasks : créer une tâche ──────────────────────────────────────────────────────
+
+pub struct CreateTaskNode;
+#[async_trait]
+impl crate::nodes::trait_::NodeExecutor for CreateTaskNode {
+    fn meta(&self) -> NodeMeta {
+        NodeMeta {
+            node_type: "kubuno.tasks.create".into(), name: "Tâches — Créer".into(),
+            description: "Crée une tâche dans un tableau".into(),
+            category: NodeCategory::Kubuno, icon: "ListChecks".into(), color: "#1a73e8".into(),
+            inputs: 1, outputs: vec![],
+            fields: vec![
+                FieldDef::new("board_id", "Tableau", FieldType::Expression).required()
+                    .help("Identifiant du tableau (visible dans l'URL du module Tâches)."),
+                FieldDef::new("title", "Titre", FieldType::Expression).required(),
+                FieldDef::new("description", "Description", FieldType::Textarea),
+                FieldDef::new("priority", "Priorité (0-9)", FieldType::Number),
+                FieldDef::new("due_at", "Échéance (ISO 8601)", FieldType::Expression),
+            ],
+        }
+    }
+    async fn execute(&self, config: Value, ctx: &ExecutionContext, n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
+        let mut body = json!({
+            "board_id": field_str(&config, "board_id")?,
+            "title":    field_str(&config, "title")?,
+            "description": config.get("description").cloned().unwrap_or(Value::Null),
+        });
+        if let Some(p) = config.get("priority").filter(|v| !v.is_null()) {
+            body["priority"] = p.clone();
+        }
+        if let Some(d) = config.get("due_at").filter(|v| !v.is_null() && v.as_str() != Some("")) {
+            body["due_at"] = d.clone();
+        }
+        let resp = n.proxy.call_module("tasks", "/tasks", Method::POST, Some(body), n.user_id, Some(&ctx.idempotency_key()))
+            .await.map_err(proxy_err)?;
+        Ok(ok_output(resp))
+    }
+}

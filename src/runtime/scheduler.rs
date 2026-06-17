@@ -15,6 +15,9 @@ use crate::runtime::queue;
 use crate::state::AppState;
 
 pub fn spawn_schedulers(state: AppState) {
+    crate::runtime::email_trigger::spawn(state.clone());
+    crate::runtime::sse_trigger::spawn(state.clone());
+
     let cron_state = state.clone();
     tokio::spawn(async move { cron_loop(cron_state).await });
 
@@ -144,14 +147,63 @@ async fn event_loop(state: AppState) -> Result<(), sqlx::Error> {
                 None => crate::services::content_files::empty_definition(),
             };
             let def = WorkflowDefinition::from_value(&def_val);
-            let subscribes = def.nodes.iter().any(|n| {
-                n.node_type == "trigger.kubuno_event"
-                    && n.config.get("event_type").and_then(|v| v.as_str()) == Some(event_type.as_str())
+            // Filtre optionnel d'un champ de config contre une clé de la charge utile.
+            let payload_match = |n: &crate::models::workflow::WorkflowNode, cfg_key: &str, payload_key: &str| {
+                match n.config.get(cfg_key).and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+                    None => true, // pas de filtre → tout passe
+                    Some(want) => event_payload.get(payload_key).and_then(|v| v.as_str()) == Some(want),
+                }
+            };
+            let subscribes = def.nodes.iter().any(|n| match n.node_type.as_str() {
+                "trigger.kubuno_event" => n.config.get("event_type").and_then(|v| v.as_str()) == Some(event_type.as_str()),
+                "trigger.form" => event_type == "FormSubmitted" && payload_match(n, "form_id", "form_id"),
+                "trigger.chat" => event_type == "MessageSent" && payload_match(n, "conversation_id", "conversation_id"),
+                _ => false,
             });
             if subscribes {
                 let trigger_data = serde_json::json!({ "event_type": event_type, "payload": event_payload });
                 let _ = queue::enqueue(&state.db, wf_id, owner_id, "event", trigger_data, state.settings.runtime.max_retries).await;
             }
+        }
+    }
+}
+
+// ── DÉCLENCHEUR D'ERREUR ────────────────────────────────────────────────────────
+
+/// Quand un workflow échoue, démarre les workflows (du même propriétaire) qui ont
+/// un nœud `trigger.error`, en leur passant les détails de l'échec. Le garde-fou
+/// `source != "error"` (côté appelant) évite les boucles infinies.
+pub async fn dispatch_error_workflows(
+    state: &AppState,
+    failed_id: Uuid,
+    failed_name: &str,
+    owner_id: Uuid,
+    execution_id: Uuid,
+    error_message: &str,
+) {
+    let active = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
+        "SELECT id, file_id FROM flow.workflows WHERE owner_id = $1 AND status = 'active' AND is_trashed = FALSE",
+    )
+    .bind(owner_id)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    let trigger_data = serde_json::json!({
+        "workflow":  { "id": failed_id.to_string(), "name": failed_name },
+        "error":     { "message": error_message },
+        "execution": { "id": execution_id.to_string() },
+    });
+
+    for (wf_id, file_id) in active {
+        let def_val = match file_id {
+            Some(fid) => crate::services::content_files::read_definition(state, owner_id, fid).await
+                .unwrap_or_else(|_| crate::services::content_files::empty_definition()),
+            None => crate::services::content_files::empty_definition(),
+        };
+        let def = WorkflowDefinition::from_value(&def_val);
+        if def.nodes.iter().any(|n| n.node_type == "trigger.error") {
+            let _ = queue::enqueue(&state.db, wf_id, owner_id, "error", trigger_data.clone(), state.settings.runtime.max_retries).await;
         }
     }
 }

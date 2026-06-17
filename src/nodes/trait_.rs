@@ -18,6 +18,8 @@ pub enum NodeCategory {
     Logic,
     External,
     Code,
+    /// Agents IA et leurs sous-nœuds (modèle, mémoire, outil, parser).
+    Ai,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -31,6 +33,8 @@ pub enum FieldType {
     Select,
     Json,
     Code,
+    /// Référence vers un credential réutilisable (résolu et déchiffré à l'exécution).
+    Credential,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -55,6 +59,9 @@ pub struct FieldDef {
     pub default:     Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options:     Option<Vec<FieldOption>>,
+    /// Pour un champ Credential : types de credential acceptés (séparés par des virgules).
+    #[serde(rename = "credentialType", skip_serializing_if = "Option::is_none")]
+    pub credential_type: Option<String>,
 }
 
 impl FieldDef {
@@ -68,9 +75,16 @@ impl FieldDef {
             help: None,
             default: None,
             options: None,
+            credential_type: None,
         }
     }
     pub fn required(mut self) -> Self { self.required = true; self }
+    /// Déclare un champ Credential acceptant les types donnés (ex: "httpBasicAuth,httpHeaderAuth").
+    pub fn credential(name: &str, label: &str, types: &str) -> Self {
+        let mut f = Self::new(name, label, FieldType::Credential);
+        f.credential_type = Some(types.into());
+        f
+    }
     pub fn help(mut self, h: &str) -> Self { self.help = Some(h.into()); self }
     pub fn placeholder(mut self, p: &str) -> Self { self.placeholder = Some(p.into()); self }
     pub fn default(mut self, v: Value) -> Self { self.default = Some(v); self }
@@ -84,6 +98,27 @@ impl FieldDef {
 pub struct PortDef {
     pub id:    String,
     pub label: String,
+}
+
+/// Port d'entrée « sous-nœud » (façon n8n) : un agent IA accepte un modèle, une
+/// mémoire, des outils, un parser… branchés par le BAS via des sous-nœuds.
+#[derive(Debug, Clone, Serialize)]
+pub struct SubInput {
+    pub id:       String,  // identifiant du port (= target_port de l'arête), ex. "ai_languageModel"
+    pub label:    String,  // libellé affiché, ex. "Modèle"
+    pub kind:     String,  // type d'`ai_output` accepté
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub multiple: bool,    // plusieurs sous-nœuds autorisés (ex. outils)
+}
+
+impl SubInput {
+    pub fn new(id: &str, label: &str, kind: &str) -> Self {
+        Self { id: id.into(), label: label.into(), kind: kind.into(), required: false, multiple: false }
+    }
+    pub fn required(mut self) -> Self { self.required = true; self }
+    pub fn multiple(mut self) -> Self { self.multiple = true; self }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,10 +148,16 @@ impl NodeMeta {
 
 /// Contexte d'infrastructure passé aux nœuds (canal sortant unique = CoreProxy).
 pub struct NodeContext<'a> {
-    pub proxy:    &'a CoreProxy,
-    pub user_id:  Uuid,
-    pub db:       &'a sqlx::PgPool,
-    pub settings: &'a Settings,
+    pub proxy:        &'a CoreProxy,
+    pub user_id:      Uuid,
+    pub db:           &'a sqlx::PgPool,
+    pub settings:     &'a Settings,
+    /// Registre des nœuds — permet à un nœud d'en exécuter d'autres (sous-workflow).
+    pub registry:     &'a crate::nodes::NodeRegistry,
+    /// Face client du module `files` — lecture du contenu d'autres workflows.
+    pub files_client: &'a crate::files_client::FilesClient,
+    /// Profondeur d'imbrication des sous-workflows (garde-fou anti-récursion).
+    pub depth:        u8,
 }
 
 /// Contexte de l'exécution courante d'un nœud.
@@ -181,6 +222,14 @@ impl NodeError {
 #[async_trait]
 pub trait NodeExecutor: Send + Sync {
     fn meta(&self) -> NodeMeta;
+
+    /// Si `Some`, ce nœud est un SOUS-NŒUD fournisseur (modèle/mémoire/outil/parser) :
+    /// il n'est pas exécuté dans le flux principal ; sa config est consommée par un
+    /// agent via le port de sous-entrée correspondant. La valeur = type fourni.
+    fn ai_output(&self) -> Option<String> { None }
+
+    /// Ports de sous-entrée (façon n8n) ouverts SOUS le nœud (ex. agent IA).
+    fn sub_inputs(&self) -> Vec<SubInput> { Vec::new() }
 
     /// `config` est déjà résolu (expressions `{{ }}` substituées).
     async fn execute(

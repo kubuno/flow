@@ -31,7 +31,7 @@ pub fn resolve_string(s: &str, ctx: &Value) -> Value {
         let inner = &trimmed[2..trimmed.len() - 2];
         // Une seule expression et pas d'autre `{{` à l'intérieur → valeur typée.
         if !inner.contains("{{") {
-            return lookup(inner.trim(), ctx);
+            return crate::runtime::expr::evaluate(inner.trim(), ctx);
         }
     }
 
@@ -43,7 +43,7 @@ pub fn resolve_string(s: &str, ctx: &Value) -> Value {
         if i + 1 < bytes.len() && bytes[i] == b'{' && bytes[i + 1] == b'{' {
             if let Some(end) = s[i + 2..].find("}}") {
                 let expr = &s[i + 2..i + 2 + end];
-                let v = lookup(expr.trim(), ctx);
+                let v = crate::runtime::expr::evaluate(expr.trim(), ctx);
                 out.push_str(&value_to_text(&v));
                 i = i + 2 + end + 2;
                 continue;
@@ -61,49 +61,6 @@ fn value_to_text(v: &Value) -> String {
         Value::Null => String::new(),
         other => other.to_string(),
     }
-}
-
-/// Navigue dans le contexte selon une expression dot-notation.
-/// Retourne `Value::Null` si le chemin n'existe pas.
-fn lookup(expr: &str, ctx: &Value) -> Value {
-    let mut current = ctx;
-    for raw_part in expr.split('.') {
-        let part = raw_part.trim();
-        if part.is_empty() {
-            continue;
-        }
-        // Gère foo[0][1]
-        let mut name = part;
-        let mut indices: Vec<usize> = Vec::new();
-        if let Some(bracket) = part.find('[') {
-            name = &part[..bracket];
-            let mut rest = &part[bracket..];
-            while let Some(open) = rest.find('[') {
-                if let Some(close) = rest[open..].find(']') {
-                    if let Ok(n) = rest[open + 1..open + close].parse::<usize>() {
-                        indices.push(n);
-                    }
-                    rest = &rest[open + close + 1..];
-                } else {
-                    break;
-                }
-            }
-        }
-
-        if !name.is_empty() {
-            match current.get(name) {
-                Some(v) => current = v,
-                None => return Value::Null,
-            }
-        }
-        for idx in indices {
-            match current.get(idx) {
-                Some(v) => current = v,
-                None => return Value::Null,
-            }
-        }
-    }
-    current.clone()
 }
 
 #[cfg(test)]
