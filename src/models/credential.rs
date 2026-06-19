@@ -174,6 +174,17 @@ pub fn credential_catalog() -> Vec<CredentialType> {
     v.push(ct("influxDb", "InfluxDB", "Database", "database", vec![
         txt("url", "URL").req().ph("http://localhost:8086"), pwd("token", "Jeton").req(), txt("org", "Organisation"),
     ]));
+    v.push(ct("nextcloud", "Nextcloud", "Cloud", "cloud", vec![
+        txt("host", "URL de l'instance").req().ph("https://cloud.exemple.com"),
+        txt("username", "Utilisateur").req(),
+        pwd("appPassword", "Mot de passe d'application").req(),
+    ]));
+    v.push(ct("googleAccessToken", "Google (jeton OAuth2)", "Globe", "google", vec![
+        pwd("accessToken", "Jeton d'accès OAuth2").req().help("Collez un access token Google (le flux OAuth n'est pas géré)."),
+    ]));
+    v.push(ct("microsoftAccessToken", "Microsoft (jeton OAuth2)", "Globe", "microsoft", vec![
+        pwd("accessToken", "Jeton d'accès OAuth2").req(),
+    ]));
     v.push(ct("supabase", "Supabase", "Database", "database", vec![
         txt("host", "URL du projet").req().ph("https://xxxx.supabase.co"), pwd("serviceRole", "Clé service role").req(),
     ]));

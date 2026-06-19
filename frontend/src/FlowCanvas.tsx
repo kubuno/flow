@@ -672,7 +672,7 @@ export default function FlowCanvas({
             )
           })}
 
-          {/* Arêtes IA (sous-nœud ↔ agent) : courbe verticale en pointillés. */}
+          {/* Arêtes IA (sous-nœud ↔ agent) : courbe en pointillés, supprimable. */}
           {edges.map(e => {
             const s = byId(e.source), tg = byId(e.target)
             if (!s || !tg) return null
@@ -680,14 +680,31 @@ export default function FlowCanvas({
             if (!sm?.aiOutput || !tm?.subInputs) return null
             const idx = tm.subInputs.findIndex(si => si.id === (e.target_port ?? ''))
             if (idx < 0) return null
+            // Extrémités = centres EXACTS des ports (cf. rendu des ports plus bas).
             const ax = tg.position.x + subPortX(idx, tm.subInputs.length)
             const ay = tg.position.y + nodeBoxHeight(tg, tm, !!logs.get(tg.id))
             const bx = s.position.x + NODE_W / 2, by = s.position.y
             const k = Math.max(30, Math.abs(by - ay) / 2)
+            const d = `M ${ax} ${ay} C ${ax} ${ay + k}, ${bx} ${by - k}, ${bx} ${by}`
             const log = logs.get(s.id)
             const color = log?.status === 'error' ? '#d93025' : '#9aa0a6'
-            return <path key={`ai-${e.id}`} d={`M ${ax} ${ay} C ${ax} ${ay + k}, ${bx} ${by - k}, ${bx} ${by}`}
-              stroke={color} strokeWidth={1.5} strokeDasharray="4 4" fill="none" />
+            const mx = (ax + bx) / 2, my = (ay + by) / 2
+            const hovered = hoverEdge === e.id
+            return (
+              <g key={`ai-${e.id}`} onPointerEnter={() => setHoverEdge(e.id)} onPointerLeave={() => setHoverEdge(h => h === e.id ? null : h)}>
+                <path d={d} stroke={hovered ? '#6750a4' : color} strokeWidth={hovered ? 2 : 1.5} strokeDasharray="4 4" fill="none" />
+                <path d={d} stroke="transparent" strokeWidth={14} fill="none" style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                  onContextMenu={ev => openMenu(ev, [
+                    { type: 'action', label: t('ctx_delete_edge', { defaultValue: 'Supprimer la connexion' }), icon: ic('Scissors'), onClick: () => onDeleteEdge(e.id) },
+                  ])} />
+                {hovered && (
+                  <g style={{ pointerEvents: 'all', cursor: 'pointer' }} onClick={ev => { ev.stopPropagation(); onDeleteEdge(e.id) }}>
+                    <circle cx={mx} cy={my} r={8} fill="#d93025" />
+                    <path d={`M ${mx - 3.5} ${my - 3.5} L ${mx + 3.5} ${my + 3.5} M ${mx + 3.5} ${my - 3.5} L ${mx - 3.5} ${my + 3.5}`} stroke="#fff" strokeWidth={1.6} />
+                  </g>
+                )}
+              </g>
+            )
           })}
 
           {/* Connexion fantôme pendant le glisser-pour-connecter */}
@@ -806,32 +823,33 @@ export default function FlowCanvas({
                 </div>
               ))}
 
-              {/* Sous-nœud IA : port de sortie EN HAUT (se branche sur un agent). */}
+              {/* Sous-nœud IA : port de sortie centré sur le BORD SUPÉRIEUR (se branche sur un agent). */}
               {aiOut && (
                 <div
                   data-ai-out={`${n.id}|${aiOut}`}
                   onPointerDown={e => startAiFromSub(e, n.id, aiOut)}
-                  className="absolute left-1/2 -translate-x-1/2 -top-2 w-3.5 h-3.5 rounded-full border-2 border-[#f1f3f4] bg-[#6750a4] hover:scale-125 cursor-crosshair"
+                  className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 border-[#f1f3f4] bg-[#6750a4] hover:scale-125 cursor-crosshair"
                   style={{ transition: 'transform .1s' }}
                   title={aiOut}
                 />
               )}
 
-              {/* Agent IA : ports de SOUS-ENTRÉE répartis sous le nœud. */}
+              {/* Agent IA : ports de SOUS-ENTRÉE répartis sous le nœud. Le losange est
+                  centré EXACTEMENT sur (px, py) = point d'ancrage de l'arête IA. */}
               {subInputs.map((si, i) => {
                 const px = subPortX(i, subInputs.length)
                 const py = nodeBoxHeight(n, meta, !!log)
                 const filled = edges.some(ed => ed.target === n.id && ed.target_port === si.id)
                 return (
-                  <div key={si.id} className="absolute flex flex-col items-center" style={{ left: px - 6, top: py - 2 }}>
+                  <div key={si.id} className="absolute" style={{ left: px, top: py }}>
                     <div
                       data-ai-in={`${n.id}|${si.id}|${si.kind}`}
                       onPointerDown={e => startAiFromAgent(e, n.id, si.id, si.kind, n.position.x + px, n.position.y + py)}
-                      className={clsx('w-3 h-3 rotate-45 border-2 border-[#f1f3f4] cursor-crosshair',
-                        aiDrag?.sub && aiDrag.kind === si.kind ? 'bg-[#6750a4] scale-125' : filled ? 'bg-[#6750a4]' : 'bg-[#b3a4d4] hover:bg-[#6750a4]')}
+                      className={clsx('w-3 h-3 rotate-45 -translate-x-1/2 -translate-y-1/2 border-2 border-[#f1f3f4] cursor-crosshair',
+                        aiDrag?.sub && aiDrag.kind === si.kind ? 'bg-[#6750a4] scale-150' : filled ? 'bg-[#6750a4]' : 'bg-[#b3a4d4] hover:bg-[#6750a4]')}
                       style={{ transition: 'transform .1s' }}
                     />
-                    <span className="text-[8px] text-[#80868b] whitespace-nowrap mt-0.5">{si.label}{si.required && <span className="text-red-400">*</span>}</span>
+                    <span className="absolute left-1/2 -translate-x-1/2 top-1.5 text-[8px] text-[#80868b] whitespace-nowrap">{si.label}{si.required && <span className="text-red-400">*</span>}</span>
                   </div>
                 )
               })}

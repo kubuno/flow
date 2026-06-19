@@ -20,6 +20,8 @@ pub enum NodeCategory {
     Code,
     /// Agents IA et leurs sous-nœuds (modèle, mémoire, outil, parser).
     Ai,
+    /// Connecteurs vers des services tiers (Gmail, Slack, GitHub, Stripe…).
+    Integration,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]

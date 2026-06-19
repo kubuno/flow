@@ -26,6 +26,7 @@ export default function NodePicker({ catalog, onPick, onClose }: { catalog: Node
     { id: 'flow',    label: t('grp_flow',     { defaultValue: 'Sous-workflows' }),       match: m => m.type.startsWith('flow.') },
     { id: 'kubuno',  label: t('grp_kubuno',   { defaultValue: 'Applications Kubuno' }),  match: m => m.category === 'kubuno' },
     { id: 'code',    label: t('grp_code',     { defaultValue: 'Code' }),                 match: m => m.category === 'code' },
+    { id: 'integration', label: t('grp_integrations', { defaultValue: 'Intégrations' }), match: m => m.category === 'integration' },
   ], [t])
 
   const searchMode = q.trim() !== ''

@@ -1,4 +1,4 @@
-export type NodeCategory = 'trigger' | 'kubuno' | 'logic' | 'external' | 'code' | 'ai'
+export type NodeCategory = 'trigger' | 'kubuno' | 'logic' | 'external' | 'code' | 'ai' | 'integration'
 export type FieldType = 'text' | 'textarea' | 'expression' | 'number' | 'boolean' | 'select' | 'json' | 'code' | 'credential'
 
 export interface FieldOption { value: string; label: string }
