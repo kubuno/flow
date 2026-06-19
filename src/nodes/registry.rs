@@ -154,5 +154,11 @@ pub fn build_registry() -> NodeRegistry {
     add!(WorkflowTool);
     add!(StructuredParser);
 
+    // Intégrations — connecteurs vers ~100 services tiers (data-driven).
+    for spec in super::integrations::service_catalog() {
+        let node: Arc<dyn NodeExecutor> = Arc::new(super::integrations::ServiceNode(spec));
+        nodes.insert(node.meta().node_type.clone(), node);
+    }
+
     NodeRegistry { nodes }
 }

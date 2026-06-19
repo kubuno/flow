@@ -105,6 +105,7 @@ const en = {
   grp_flow: "Sub-workflows",
   grp_kubuno: "Kubuno apps",
   grp_code: "Code",
+  grp_integrations: "Integrations",
   // Node box & options
   items: "items",
   disabled: "Disabled",
@@ -242,6 +243,7 @@ const fr = {
   grp_flow: "Sous-workflows",
   grp_kubuno: "Applications Kubuno",
   grp_code: "Code",
+  grp_integrations: "Intégrations",
   // Box du nœud & options
   items: "éléments",
   disabled: "Désactivé",
