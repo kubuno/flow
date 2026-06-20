@@ -30,7 +30,7 @@ export default function ExecutionHistory({ workflowId, onClose }: { workflowId: 
   }
 
   return (
-    <div className="w-96 h-full bg-[#ffffff] border-l border-[#dadce0] flex flex-col">
+    <div className="w-96 max-w-[90vw] h-full bg-[#ffffff] border-l border-[#dadce0] flex flex-col no-print">
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#dadce0]">
         <span className="text-[#5f6368] text-sm font-semibold">{t('exec_history')}</span>
         <button className="text-[#80868b] hover:text-[#202124]" onClick={onClose}><X size={18} /></button>

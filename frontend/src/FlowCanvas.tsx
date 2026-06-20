@@ -875,7 +875,7 @@ export default function FlowCanvas({
       {renderMinimap()}
 
       {/* Contrôle zoom */}
-      <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-[#ffffff] border border-[#dadce0] rounded-lg px-2 py-1 text-[#5f6368] text-xs">
+      <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-[#ffffff] border border-[#dadce0] rounded-lg px-2 py-1 text-[#5f6368] text-xs no-print">
         <button className="px-1.5 hover:text-[#202124]" onClick={() => zoomBy(0.9)}>−</button>
         <span className="w-10 text-center">{Math.round(vp.scale * 100)}%</span>
         <button className="px-1.5 hover:text-[#202124]" onClick={() => zoomBy(1.1)}>+</button>
