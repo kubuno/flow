@@ -4,8 +4,7 @@ import { useTranslation } from 'react-i18next'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { useDebouncedAutosave, prompt, useAuthStore } from '@kubuno/sdk'
-import { Plus, Play, Save, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound } from 'lucide-react'
-import { WorkspaceShell, WORKSPACE_LIGHT } from '@kubuno/sdk'
+import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy } from 'lucide-react'
 import { flowApi, streamExecution } from './api'
 import type { CredentialMeta, ExprHelp, NodeLog, NodeMeta, StickyNote, Workflow, WorkflowDefinition, WorkflowEdge, WorkflowNode } from './types'
 import FlowCanvas, { NODE_W } from './FlowCanvas'
@@ -15,6 +14,12 @@ import CredentialsManager from './CredentialsManager'
 import ExecutionHistory from './ExecutionHistory'
 import { useCollab } from './collab/collabProvider'
 import { userColor, PresenceAvatars } from './collab/presence'
+import FlowStartContent from './FlowStartContent'
+import { OfficeShell } from './shell/OfficeShell'
+import { THEME_FLOW } from './ribbon/officeThemes'
+import { useFileTab, backstageLabels, InfoPanel } from './ribbon/ModuleBackstage'
+import { SaveButton } from './ribbon/SaveButton'
+import type { RibbonTab } from './ribbon/types'
 
 function uid(prefix: string): string {
   const r = (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2))
@@ -403,64 +408,136 @@ export default function FlowEditor() {
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null
   const selected = selectedId ? nodes.find(n => n.id === selectedId) ?? null : null
 
-  // Outils principaux dans la TOOLBAR (options bar), sous la barre de menus.
-  const toolbarActions = (
-    <div className="flex items-center gap-1.5 px-2 w-full">
-      <button onClick={() => { pendingPlacement.current = null; setShowPicker(true) }} className="flex items-center gap-1 text-xs text-white bg-[#e8824a] hover:bg-[#d9733b] px-2.5 py-1 rounded">
-        <Plus size={14} /> {t('add_node')}
-      </button>
-      <div className="w-px h-5 bg-[#dadce0] mx-1" />
-      <button onClick={undo} disabled={!undoMgr.canUndo()} title={t('undo', { defaultValue: 'Annuler (Ctrl+Z)' })} className="flex items-center text-[#5f6368] hover:text-[#202124] hover:bg-[#e8eaed] px-1.5 py-1 rounded disabled:opacity-30">
-        <Undo2 size={15} />
-      </button>
-      <button onClick={redo} disabled={!undoMgr.canRedo()} title={t('redo', { defaultValue: 'Refaire (Ctrl+Maj+Z)' })} className="flex items-center text-[#5f6368] hover:text-[#202124] hover:bg-[#e8eaed] px-1.5 py-1 rounded disabled:opacity-30">
-        <Redo2 size={15} />
-      </button>
-      <div className="w-px h-5 bg-[#dadce0] mx-1" />
-      <button onClick={run} disabled={running} className="flex items-center gap-1 text-xs text-[#202124] bg-[#e8eaed] hover:bg-[#dadce0] px-2.5 py-1 rounded disabled:opacity-50">
-        {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} {t('test')}
-      </button>
-      <button onClick={toggleActive} className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded ${wf?.status === 'active' ? 'text-green-700 bg-green-100 hover:bg-green-200' : 'text-[#202124] bg-[#e8eaed] hover:bg-[#dadce0]'}`}>
-        <Power size={14} /> {wf?.status === 'active' ? t('active') : t('activate')}
-      </button>
-      <button onClick={() => setShowHistory(h => !h)} className="flex items-center gap-1 text-xs text-[#202124] bg-[#e8eaed] hover:bg-[#dadce0] px-2.5 py-1 rounded">
-        <History size={14} /> {t('history')}
-      </button>
-      <button onClick={() => setCredsManager({ open: true })} className="flex items-center gap-1 text-xs text-[#202124] bg-[#e8eaed] hover:bg-[#dadce0] px-2.5 py-1 rounded">
-        <KeyRound size={14} /> {t('credentials', { defaultValue: 'Identifiants' })}
-      </button>
-    </div>
-  )
+  // Add a sticky note near the canvas origin (toolbar/ribbon entry — the canvas
+  // also adds notes via double-click, but the ribbon needs an explicit button).
+  const addNoteAtOrigin = useCallback(() => addNote(160 + notes.length * 30, 160 + notes.length * 24), [addNote, notes.length])
 
-  // Enregistrer + avatars de présence (collaborateurs en ligne) dans la topbar.
+  // ── Ruban façon MS Office (data-driven) — remplace la barre de menus + toolbar.
+  // Onglet Accueil : Workflow (Nouveau/Dupliquer, ex-menuActions) + Édition
+  // (Annuler/Refaire/Supprimer) + Exécution (Tester/Activer/Historique) +
+  // Identifiants. Onglet Insertion : ajout de nœud + note. Onglet Affichage :
+  // bascule de l'historique. Aucune action de l'ancienne toolbar n'est perdue.
+  const ribbon: RibbonTab[] = [
+    {
+      id: 'home', label: t('office_bs_home', { defaultValue: 'Accueil' }),
+      groups: [
+        {
+          id: 'workflow', label: t('rb_group_workflow', { defaultValue: 'Workflow' }),
+          items: [
+            { id: 'new', kind: 'button', size: 'large', icon: <Plus size={18} />, label: t('new_workflow'), onClick: handleNew },
+            { id: 'dup', kind: 'button', icon: <Copy size={15} />, label: t('duplicate'), onClick: handleDuplicate, disabled: !wf },
+          ],
+        },
+        {
+          id: 'edit', label: t('rb_group_edit', { defaultValue: 'Édition' }),
+          items: [
+            { id: 'undo', kind: 'button', icon: <Undo2 size={15} />, label: t('undo', { defaultValue: 'Annuler' }), shortcut: 'Ctrl+Z', onClick: undo, disabled: !undoMgr.canUndo() },
+            { id: 'redo', kind: 'button', icon: <Redo2 size={15} />, label: t('redo', { defaultValue: 'Refaire' }), shortcut: 'Ctrl+Maj+Z', onClick: redo, disabled: !undoMgr.canRedo() },
+            { id: 'sep1', kind: 'separator' },
+            { id: 'del', kind: 'button', icon: <Trash2 size={15} />, label: t('delete', { defaultValue: 'Supprimer' }), onClick: deleteSelected, disabled: selectedIds.size === 0 },
+          ],
+        },
+        {
+          id: 'exec', label: t('rb_group_exec', { defaultValue: 'Exécution' }),
+          items: [
+            { id: 'run', kind: 'button', size: 'large', icon: running ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />, label: t('test'), onClick: run, disabled: running },
+            { id: 'activate', kind: 'toggle', icon: <Power size={15} />, label: wf?.status === 'active' ? t('active') : t('activate'), active: wf?.status === 'active', onClick: () => { void toggleActive() }, disabled: !wf },
+            { id: 'history', kind: 'toggle', icon: <History size={15} />, label: t('history'), active: showHistory, onClick: () => setShowHistory(h => !h) },
+          ],
+        },
+        {
+          id: 'creds', label: t('rb_group_creds', { defaultValue: 'Identifiants' }),
+          items: [
+            { id: 'credentials', kind: 'button', size: 'large', icon: <KeyRound size={18} />, label: t('credentials', { defaultValue: 'Identifiants' }), onClick: () => setCredsManager({ open: true }) },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'insert', label: t('rb_tab_insert', { defaultValue: 'Insertion' }),
+      groups: [
+        {
+          id: 'nodes', label: t('rb_group_nodes', { defaultValue: 'Nœuds' }),
+          items: [
+            { id: 'add-node', kind: 'button', size: 'large', icon: <Plus size={18} />, label: t('add_node'), onClick: () => { pendingPlacement.current = null; setShowPicker(true) } },
+          ],
+        },
+        {
+          id: 'annotate', label: t('rb_group_annotate', { defaultValue: 'Annotations' }),
+          items: [
+            { id: 'add-note', kind: 'button', size: 'large', icon: <StickyNoteIcon size={18} />, label: t('add_note', { defaultValue: 'Note' }), onClick: addNoteAtOrigin },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'view', label: t('rb_tab_view', { defaultValue: 'Affichage' }),
+      groups: [
+        {
+          id: 'panels', label: t('rb_group_panels', { defaultValue: 'Panneaux' }),
+          items: [
+            { id: 'history-toggle', kind: 'toggle', size: 'large', icon: <History size={18} />, label: t('history'), active: showHistory, onClick: () => setShowHistory(h => !h) },
+          ],
+        },
+      ],
+    },
+  ]
+
+  // Onglet « Fichier » (backstage façon Office) — TOUJOURS en 1ʳᵉ position du ruban.
+  // À l'ouverture, c'est l'onglet 'home' qui s'affiche (pas le backstage).
+  const { fileTab, activeTabId, onTabChange } = useFileTab({
+    theme: THEME_FLOW,
+    labels: backstageLabels(t),
+    startContent: <FlowStartContent />,
+    defaultTab: 'home',
+    doc: {
+      info: (
+        <InfoPanel
+          title={wf?.name || t('untitled', { defaultValue: 'Sans titre' })}
+          subtitle={t('title', { defaultValue: 'Flow' })}
+          rows={[
+            [t('office_bs_info_type', { defaultValue: 'Type' }), t('title', { defaultValue: 'Flow' })],
+            [t('rb_info_nodes', { defaultValue: 'Nœuds' }), nodes.length],
+            [t('rb_info_edges', { defaultValue: 'Connexions' }), edges.length],
+            [t('rb_info_status', { defaultValue: 'Statut' }), wf?.status === 'active' ? t('active') : t('activate', { defaultValue: 'Inactif' })],
+          ]}
+        />
+      ),
+      onPrint: () => window.print(),
+      onClose: () => navigate('/flow'),
+    },
+  })
+
+  // Bouton Enregistrer placé près du titre (juste avant la corbeille) via `titleActions`.
+  const saveButton = <SaveButton onSave={save} saving={saving} dirty={dirty} label={t('save')} />
+
+  // Avatars de présence (collaborateurs en ligne) à droite de la topbar.
   const topbarActions = (
     <div className="flex items-center gap-2">
       <PresenceAvatars awareness={awareness} selfClientId={awareness.clientID} />
-      <button onClick={save} disabled={saving || !dirty} className="flex items-center gap-1 text-xs text-[#202124] bg-[#e8eaed] hover:bg-[#dadce0] px-2.5 py-1.5 rounded disabled:opacity-40">
-        <Save size={14} /> {t('save')}
-      </button>
     </div>
   )
 
   return (
-    <WorkspaceShell
-      theme={WORKSPACE_LIGHT}
+    <OfficeShell
+      ribbon={[fileTab, ...ribbon]}
+      activeTabId={activeTabId}
+      onTabChange={onTabChange}
+      theme={THEME_FLOW}
       chromeless
       topbarHeight={64}
-      titleIcon={<WorkflowIcon size={16} style={{ color: WORKSPACE_LIGHT.accent }} />}
+      titleIcon={<WorkflowIcon size={16} className="text-white/90 flex-shrink-0" />}
       title={titleDraft}
       onTitleChange={(v) => { setTitleDraft(v); markDirty() }}
       onTitleCommit={save}
       titlePlaceholder={t('untitled')}
       saveStatus={saving ? t('saving') : dirty ? t('modified') : t('saved')}
       onBack={() => navigate('/flow')}
+      titleActions={saveButton}
       onDelete={handleDelete}
       deleteTitle={t('delete_workflow')}
       deleteConfirm={{ title: t('delete_confirm_title'), message: t('delete_confirm_msg'), confirmLabel: t('delete'), variant: 'danger' }}
-      menuActions={{ newLabel: t('new_workflow'), onNew: handleNew, onDuplicate: handleDuplicate }}
       topbarActions={topbarActions}
-      optionsBar={toolbarActions}
-      optionsBarHeight={40}
     >
       <div className="relative flex flex-1 min-w-0 min-h-0">
         <div className="flex-1 relative min-w-0">
@@ -525,6 +602,6 @@ export default function FlowEditor() {
           onClose={() => setCredsManager({ open: false })}
         />
       )}
-    </WorkspaceShell>
+    </OfficeShell>
   )
 }

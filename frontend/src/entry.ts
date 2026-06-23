@@ -1,6 +1,6 @@
 /** Bundle MODULE flow — chargé à l'exécution (cf. vite.module.config). */
 import { lazy } from 'react'
-import { RouteRegistry, CollapseSidebarRegistry, WaffleAppRegistry, FileTypeRegistry, FaviconRegistry, useToolbarStore, SlotRegistry, SDK_VERSION } from '@kubuno/sdk'
+import { RouteRegistry, CollapseSidebarRegistry, WaffleAppRegistry, FileTypeRegistry, FaviconRegistry, ModuleSettingsRegistry, useToolbarStore, SlotRegistry, SDK_VERSION } from '@kubuno/sdk'
 import './index.css'
 import './i18n'
 import FlowLogo from './FlowLogo'
@@ -22,6 +22,9 @@ export function register() {
   // L'éditeur de workflow occupe toute la largeur : on replie la sidebar du core.
   CollapseSidebarRegistry.add('/flow')
 
+  // The header gear button opens the per-user Flow settings while in /flow.
+  ModuleSettingsRegistry.register('flow')
+
   // Bouton « Nouveau » du shell (comme les autres modules) → crée un workflow.
   SlotRegistry.register('sidebar-new-actions', 'flow', FlowNewActions)
 
@@ -35,11 +38,11 @@ export function register() {
     { id: 'flow', label: 'Flow', Icon: FlowLogo, path: '/flow' },
   ])
 
-  const FlowDashboard = lazy(() => import('./FlowDashboard'))
-  const FlowEditor    = lazy(() => import('./FlowEditor'))
-  const FlowSettings  = lazy(() => import('./FlowSettings'))
+  const FlowDashboard    = lazy(() => import('./FlowDashboard'))
+  const FlowEditor       = lazy(() => import('./FlowEditor'))
+  const FlowSettingsPage = lazy(() => import('./FlowSettingsPage'))
 
   RouteRegistry.register('flow',          FlowDashboard)
-  RouteRegistry.register('flow/settings', FlowSettings)
+  RouteRegistry.register('flow/settings', FlowSettingsPage)
   RouteRegistry.register('flow/:id',      FlowEditor)
 }
