@@ -19,7 +19,7 @@ export const flowApi = {
     const { data } = await api.post('/flow/workflows', payload)
     return data
   },
-  async update(id: string, payload: Partial<{ name: string; description: string | null; definition: WorkflowDefinition; status: string; tags: string[] }>): Promise<Workflow> {
+  async update(id: string, payload: Partial<{ name: string; description: string | null; definition: WorkflowDefinition; status: string; tags: string[]; is_starred: boolean }>): Promise<Workflow> {
     const { data } = await api.put(`/flow/workflows/${id}`, payload)
     return data
   },

@@ -1,0 +1,1 @@
+ALTER TABLE flow.workflows ADD COLUMN is_starred BOOLEAN NOT NULL DEFAULT FALSE;
