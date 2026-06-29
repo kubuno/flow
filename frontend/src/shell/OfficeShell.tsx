@@ -17,7 +17,11 @@ type OfficeShellProps = Omit<ShellProps, 'menuBar' | 'menus' | 'menuActions' | '
   onTabChange?: (id: string) => void
 }
 
-export function OfficeShell({ ribbon, activeTabId, onTabChange, theme = WORKSPACE_OFFICE, ...rest }: OfficeShellProps) {
+export function OfficeShell({ ribbon, activeTabId, onTabChange, theme = WORKSPACE_OFFICE, onBack, ...rest }: OfficeShellProps) {
+  // Bouton « retour » volontairement retiré de TOUS les éditeurs à ruban : on ne
+  // transmet pas `onBack` au WorkspaceShell (la prop reste acceptée pour compat des
+  // appelants, mais n'affiche plus de flèche dans la topbar).
+  void onBack
   return (
     <WorkspaceShell
       {...rest}

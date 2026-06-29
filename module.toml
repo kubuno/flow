@@ -1,7 +1,7 @@
 [module]
 id           = "flow"
 display_name = "Flow"
-version      = "0.1.0"
+version      = "0.1.2"
 description  = "Orchestrateur de workflows visuels — automatisation no-code, connecteurs natifs Kubuno"
 author       = "Kubuno Contributors"
 license      = "AGPL-3.0"
