@@ -103,6 +103,7 @@ pub struct Workflow {
     pub last_error:       Option<String>,
     pub tags:             Vec<String>,
     pub is_trashed:       bool,
+    pub is_starred:       bool,
     pub created_at:       DateTime<Utc>,
     pub updated_at:       DateTime<Utc>,
 }
@@ -132,4 +133,6 @@ pub struct UpdateWorkflowDto {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub is_starred: Option<bool>,
 }

@@ -147,6 +147,8 @@ pub async fn update(
         Some(_) => return Err(FlowError::Validation("status invalide".into())),
         None => existing.status,
     };
+    // Partial update: keep the current value unless the DTO carries a new one.
+    let is_starred = dto.is_starred.unwrap_or(existing.is_starred);
 
     // Définition modifiée → écrite dans le fichier (créé si absent).
     let (file_id, definition) = match dto.definition {
@@ -168,7 +170,7 @@ pub async fn update(
 
     let mut wf = sqlx::query_as::<_, Workflow>(
         r#"UPDATE flow.workflows SET
-            name = $2, description = $3, file_id = $4, tags = $5, status = $6
+            name = $2, description = $3, file_id = $4, tags = $5, status = $6, is_starred = $7
            WHERE id = $1 RETURNING *"#,
     )
     .bind(id)
@@ -177,6 +179,7 @@ pub async fn update(
     .bind(file_id)
     .bind(&tags)
     .bind(&status)
+    .bind(is_starred)
     .fetch_one(&state.db)
     .await?;
     wf.definition = definition;

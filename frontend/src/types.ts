@@ -127,6 +127,7 @@ export interface Workflow {
   last_error: string | null
   tags: string[]
   is_trashed: boolean
+  is_starred: boolean
   created_at: string
   updated_at: string
 }

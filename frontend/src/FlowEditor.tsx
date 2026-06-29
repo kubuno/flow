@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { useDebouncedAutosave, prompt, useAuthStore } from '@kubuno/sdk'
-import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy } from 'lucide-react'
+import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy, Star } from 'lucide-react'
 import { flowApi, streamExecution } from './api'
 import type { CredentialMeta, ExprHelp, NodeLog, NodeMeta, StickyNote, Workflow, WorkflowDefinition, WorkflowEdge, WorkflowNode } from './types'
 import FlowCanvas, { NODE_W } from './FlowCanvas'
@@ -508,8 +508,28 @@ export default function FlowEditor() {
     },
   })
 
+  // Toggle the "starred" (favourite) flag — persisted via the partial update API.
+  // This editor keeps the current workflow in local state (`wf`), so we refresh it
+  // from the API response (equivalent to invalidating the current workflow query).
+  const starMut = useCallback(async (next: boolean) => {
+    if (!wf) return
+    try {
+      const updated = await flowApi.update(wf.id, { is_starred: next })
+      setWf(updated)
+    } catch { /* ignore */ }
+  }, [wf])
+
   // Bouton Enregistrer placé près du titre (juste avant la corbeille) via `titleActions`.
   const saveButton = <SaveButton onSave={save} saving={saving} dirty={dirty} label={t('save')} />
+
+  // Bouton Favori (étoile) placé après Enregistrer (ordre : Enregistrer, ⭐, puis 🗑).
+  const starButton = wf ? (
+    <button onClick={() => starMut(!wf.is_starred)}
+      className={`p-1.5 rounded hover:bg-white/10 transition-colors flex-shrink-0 ${wf.is_starred ? 'text-warning' : 'text-white/90'}`}
+      title={wf.is_starred ? t('unstar', { defaultValue: 'Retirer des favoris' }) : t('star', { defaultValue: 'Ajouter aux favoris' })}>
+      <Star size={15} className={wf.is_starred ? 'fill-warning text-warning' : ''} />
+    </button>
+  ) : null
 
   // Avatars de présence (collaborateurs en ligne) à droite de la topbar.
   const topbarActions = (
@@ -533,7 +553,7 @@ export default function FlowEditor() {
       titlePlaceholder={t('untitled')}
       saveStatus={saving ? t('saving') : dirty ? t('modified') : t('saved')}
       onBack={() => navigate('/flow')}
-      titleActions={saveButton}
+      titleActions={<>{saveButton}{starButton}</>}
       onDelete={handleDelete}
       deleteTitle={t('delete_workflow')}
       deleteConfirm={{ title: t('delete_confirm_title'), message: t('delete_confirm_msg'), confirmLabel: t('delete'), variant: 'danger' }}
