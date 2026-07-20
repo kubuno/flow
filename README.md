@@ -25,7 +25,9 @@ A standalone Rust process that registers with the [core](https://github.com/kubu
 
 This module ships in the **all-in-one [Kubuno](https://github.com/kubuno/core) Docker image** (`ghcr.io/kubuno/kubuno`) — the easiest way to self-host a full Kubuno instance (core + every module). See **[kubuno/docker](https://github.com/kubuno/docker)** for `docker compose` instructions.
 
-To build this module from source (Debian package), see below.
+**Native packages** for every supported platform are attached to each [GitHub Release](https://github.com/kubuno/flow/releases): Debian/Ubuntu (`.deb`), Fedora/RHEL/openSUSE (`.rpm`), Windows (NSIS installer), and macOS (`.pkg`). They all install the module into an existing Kubuno core installation and restart the service.
+
+To build this module from source, see below.
 
 ## Build
 
@@ -35,6 +37,14 @@ To build this module from source (Debian package), see below.
 cargo build --release                     # → target/release/kubuno-flow
 cd frontend && npm ci && npm run build     # → dist/{entry.js, entry.css}
 bash build_deb.sh                          # → dist/kubuno-flow_*.deb
+```
+
+Native packages for the other platforms are produced by self-detecting scripts sharing the same layout as the `.deb` (also run by CI on release tags):
+
+```bash
+bash build_rpm.sh                          # → dist/kubuno-flow-*.rpm   (Fedora/RHEL/openSUSE)
+bash build_windows.sh                      # → dist/kubuno-flow-setup-*-x64.exe (NSIS; cargo-xwin from Linux)
+bash build_macos.sh                        # → dist/kubuno-flow-*-arm64.pkg     (run on a Mac)
 ```
 
 > Shared dependencies come from Kubuno — no `kubuno/core` checkout required:
