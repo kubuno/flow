@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { useDebouncedAutosave, prompt, useAuthStore } from '@kubuno/sdk'
-import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy, Star } from 'lucide-react'
+import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy, Star, ClipboardPaste, Scissors } from 'lucide-react'
 import { flowApi, streamExecution } from './api'
 import type { CredentialMeta, ExprHelp, NodeLog, NodeMeta, StickyNote, Workflow, WorkflowDefinition, WorkflowEdge, WorkflowNode } from './types'
 import FlowCanvas, { NODE_W } from './FlowCanvas'
@@ -422,6 +422,15 @@ export default function FlowEditor() {
       id: 'home', label: t('office_bs_home', { defaultValue: 'Accueil' }),
       groups: [
         {
+          // Presse-papiers (façon Word) : coller/couper/copier le nœud sélectionné.
+          id: 'clip', label: t('rb_group_clipboard', { defaultValue: 'Presse-papiers' }),
+          items: [
+            { id: 'paste', kind: 'button', size: 'large', icon: <ClipboardPaste size={18} />, label: t('paste', { defaultValue: 'Coller' }), shortcut: 'Ctrl+V', onClick: paste, disabled: !hasClipboard },
+            { id: 'cut', kind: 'button', icon: <Scissors size={15} />, label: t('cut', { defaultValue: 'Couper' }), shortcut: 'Ctrl+X', onClick: () => { const ids = [...selectedIds]; if (ids.length === 1) { copyNode(ids[0]); deleteSelected() } }, disabled: selectedIds.size !== 1 },
+            { id: 'copy', kind: 'button', icon: <Copy size={15} />, label: t('copy', { defaultValue: 'Copier' }), shortcut: 'Ctrl+C', onClick: () => { const ids = [...selectedIds]; if (ids.length === 1) copyNode(ids[0]) }, disabled: selectedIds.size !== 1 },
+          ],
+        },
+        {
           id: 'workflow', label: t('rb_group_workflow', { defaultValue: 'Workflow' }),
           items: [
             { id: 'new', kind: 'button', size: 'large', icon: <Plus size={18} />, label: t('new_workflow'), onClick: handleNew },
@@ -490,6 +499,7 @@ export default function FlowEditor() {
     labels: backstageLabels(t),
     startContent: <FlowStartContent />,
     defaultTab: 'home',
+    openKey: id,
     doc: {
       info: (
         <InfoPanel
@@ -562,6 +572,7 @@ export default function FlowEditor() {
       <div className="relative flex flex-1 min-w-0 min-h-0">
         <div className="flex-1 relative min-w-0">
           <FlowCanvas
+            workflowId={id}
             nodes={nodes} edges={edges} notes={notes} metas={metas}
             selectedIds={selectedIds} logs={logs}
             onSelectionChange={setSelectedIds}

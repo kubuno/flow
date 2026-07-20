@@ -8,6 +8,7 @@ import { useModulePrefs } from './userPrefs'
 // ── Per-user preferences (backend, cross-device via core users.preferences) ─────
 
 interface FlowPrefs {
+  [key: string]: unknown // satisfies useModulePrefs<T extends Record<string, unknown>>
   gridStyle:    string   // 'dots' | 'lines' | 'none' — canvas background grid
   snapToGrid:   boolean  // snap node positions to the grid
   showMinimap:  boolean  // show the canvas minimap

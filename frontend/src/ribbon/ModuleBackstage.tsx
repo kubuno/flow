@@ -2,7 +2,7 @@
 // Office. Chaque module fournit son contenu d'accueil (sa StartPage) + ses actions
 // (Informations / Exporter / Imprimer / Fermer). `ModuleHome` = page d'accueil SANS
 // document : la chrome éditeur avec le backstage ouvert + verrouillé.
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Home, Info, FileDown, Printer, X } from 'lucide-react'
 import type { WorkspaceTheme } from '@kubuno/sdk'
@@ -124,6 +124,10 @@ export function useFileTab(opts: {
   startContent: ReactNode
   doc?:         ModuleBackstageDoc
   defaultTab?:  string            // onglet affiché à l'ouverture (défaut : 'home')
+  // Identité du document actuellement ouvert (id de route ou de sélection). Quand elle
+  // change (= un fichier vient d'être ouvert depuis le backstage), on quitte
+  // automatiquement l'onglet « Fichier » pour revenir sur l'onglet d'édition (Accueil).
+  openKey?:     string | null
 }): { fileTab: RibbonTab; activeTabId: string; onTabChange: (id: string) => void } {
   const home = opts.defaultTab ?? 'home'
   const [active, setActive] = useState(home)
@@ -131,6 +135,14 @@ export function useFileTab(opts: {
   const onTabChange = useCallback((id: string) => {
     setActive(p => { if (id === 'file' && p !== 'file') prev.current = p; return id })
   }, [])
+
+  // Un nouveau document a été ouvert → sortir du backstage vers l'onglet d'édition.
+  // (La navigation ne remonte pas ces éditeurs : sans ça, le backstage resterait affiché.)
+  const lastOpenKey = useRef(opts.openKey)
+  useEffect(() => {
+    if (opts.openKey && opts.openKey !== lastOpenKey.current) setActive(home)
+    lastOpenKey.current = opts.openKey
+  }, [opts.openKey, home])
   const sections = moduleBackstageSections(opts.labels, opts.startContent, opts.doc)
   const fileTab: RibbonTab = {
     id: 'file', label: opts.labels.file, groups: [],

@@ -17,10 +17,12 @@ import { parseN8n, parseMake, parseExternalWorkflow } from './flowImport'
 import TemplatesModal from './TemplatesModal'
 import type { WorkflowTemplate } from './templates'
 import type { Workflow } from './types'
+import { useOpenError } from './ribbon/useOpenError'
 
 export default function FlowStartContent() {
   const { t, i18n } = useTranslation('flow')
   const navigate = useNavigate()
+  const { showOpenError, openErrorDialog } = useOpenError(t)
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [creating, setCreating] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
@@ -85,7 +87,7 @@ export default function FlowStartContent() {
 
   // Opening a .kbflw file from the browser → editor.
   const handleOpenFile = (file: FileItem): boolean => {
-    flowApi.openByFile(file.id).then(wf => navigate(`/flow/${wf.id}`)).catch(() => {})
+    flowApi.openByFile(file.id).then(wf => navigate(`/flow/${wf.id}`)).catch(showOpenError)
     return true
   }
 
@@ -104,6 +106,7 @@ export default function FlowStartContent() {
 
   return (
     <>
+    {openErrorDialog}
     <ModuleStartPage
       recentTitle={t('recent', { defaultValue: 'Récents' })}
       recentItems={recentItems}
