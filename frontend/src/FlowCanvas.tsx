@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as Icons from 'lucide-react'
 import clsx from 'clsx'
@@ -7,9 +7,25 @@ import type { NodeLog, NodeMeta, StickyNote, WorkflowEdge, WorkflowNode } from '
 
 export const NODE_W = 210
 const PORT_GAP = 22 // espacement vertical entre deux ports de sortie
-const NODE_H = 92 // hauteur approximative d'un nœud (test d'intersection marquee + minimap)
+const NODE_H = 96 // hauteur approximative d'un nœud (test d'intersection marquee + minimap)
 // Hauteurs des bandes du box pour calculer le centre vertical réel (ports centrés).
-const NODE_HEAD_H = 48, NODE_SUMMARY_H = 18, NODE_FOOTER_H = 19, NODE_DISABLED_H = 13
+const NODE_HEAD_H = 52, NODE_SUMMARY_H = 18, NODE_FOOTER_H = 19, NODE_DISABLED_H = 13
+
+// Lighten (amt > 0) or darken (amt < 0) a #rrggbb colour — used for the icon
+// tile gradient so each category colour gets some depth without a palette table.
+// Category → existing picker-group i18n key (for the node subtitle).
+const CAT_LABEL_KEY: Record<string, string> = {
+  trigger: 'grp_triggers', kubuno: 'grp_kubuno', logic: 'grp_logic', external: 'grp_http',
+  code: 'grp_code', ai: 'grp_ai', integration: 'grp_integrations',
+}
+
+function shade(hex: string, amt: number): string {
+  const v = parseInt(hex.slice(1, 7), 16)
+  const r = Math.max(0, Math.min(255, (v >> 16) + amt))
+  const g = Math.max(0, Math.min(255, ((v >> 8) & 0xff) + amt))
+  const b2 = Math.max(0, Math.min(255, (v & 0xff) + amt))
+  return `#${((r << 16) | (g << 8) | b2).toString(16).padStart(6, '0')}`
+}
 
 function LucideIcon({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   const Cmp = (Icons as unknown as Record<string, React.ComponentType<{ size?: number; color?: string }>>)[name] ?? Icons.Box
@@ -21,23 +37,34 @@ function outputs(meta: NodeMeta | undefined): string[] {
   return meta.outputs.length > 0 ? meta.outputs.map(o => o.id) : ['default']
 }
 
+// Agents (nœuds à sous-entrées IA) : carte élargie + bande dédiée aux libellés
+// des sous-ports intégrée au bas de la carte (façon n8n).
+const AGENT_W = 300, NODE_SUBBAND_H = 20
+function subBandH(meta: NodeMeta | undefined): number {
+  return meta?.subInputs?.length ? NODE_SUBBAND_H : 0
+}
+/** Largeur réelle d'un nœud (les agents IA sont plus larges). */
+export function nodeWidth(meta: NodeMeta | undefined): number {
+  return meta?.subInputs?.length ? AGENT_W : NODE_W
+}
+
 /** Hauteur réelle du box d'un nœud (en-tête + sous-titre + pied éventuels). */
 function nodeBoxHeight(n: WorkflowNode, meta: NodeMeta | undefined, hasLog: boolean): number {
   let h = NODE_HEAD_H
   if (nodeSummary(n, meta)) h += NODE_SUMMARY_H
   if (hasLog) h += NODE_FOOTER_H
   if (n.settings?.disabled) h += NODE_DISABLED_H
-  return h
+  return h + subBandH(meta)
 }
 
-/** Y du port d'entrée : centre vertical du nœud. */
+/** Y du port d'entrée : centre vertical du corps (hors bande de sous-ports). */
 function inPortYAt(n: WorkflowNode, meta: NodeMeta | undefined, hasLog: boolean): number {
-  return nodeBoxHeight(n, meta, hasLog) / 2
+  return (nodeBoxHeight(n, meta, hasLog) - subBandH(meta)) / 2
 }
 
 /** Y d'un port de sortie : centré verticalement, les ports multiples répartis autour du centre. */
 function outPortYAt(n: WorkflowNode, meta: NodeMeta | undefined, portId: string, hasLog: boolean): number {
-  const cy = nodeBoxHeight(n, meta, hasLog) / 2
+  const cy = (nodeBoxHeight(n, meta, hasLog) - subBandH(meta)) / 2
   const outs = outputs(meta)
   if (outs.length <= 1) return cy
   const idx = Math.max(0, outs.indexOf(portId))
@@ -177,6 +204,8 @@ function nodeSummary(n: WorkflowNode, meta: NodeMeta | undefined): string {
 interface Viewport { tx: number; ty: number; scale: number }
 
 interface Props {
+  /** Id du workflow — clé de persistance locale du viewport (pan + zoom). */
+  workflowId?: string
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
   notes: StickyNote[]
@@ -210,6 +239,7 @@ interface Props {
 }
 
 export default function FlowCanvas({
+  workflowId,
   nodes, edges, notes, metas, selectedIds, logs, onSelectionChange, onMoveNode, onConnect, onConnectToCanvas, onConnectAi,
   onInsertOnEdge, onDeleteEdge, onSetWaypoints, onDeleteNode, onDeleteSelected, onDuplicateNode, onRenameNode,
   onCopyNode, onToggleDisabled, onDisconnectNode, onPaste, canPaste, onRequestAddNode,
@@ -217,7 +247,24 @@ export default function FlowCanvas({
 }: Props) {
   const { t } = useTranslation('flow')
   const containerRef = useRef<HTMLDivElement>(null)
-  const [vp, setVp] = useState<Viewport>({ tx: 40, ty: 40, scale: 1 })
+  // Viewport (pan + zoom) restauré depuis localStorage, par workflow — l'espace
+  // de travail se rouvre là où on l'a laissé (préférence locale, non collaborative).
+  const vpKey = workflowId ? `flow:vp:${workflowId}` : null
+  const [vp, setVp] = useState<Viewport>(() => {
+    if (vpKey) {
+      try {
+        const v = JSON.parse(localStorage.getItem(vpKey) || 'null') as Viewport | null
+        if (v && Number.isFinite(v.tx) && Number.isFinite(v.ty) && Number.isFinite(v.scale) && v.scale >= 0.25 && v.scale <= 2.5) return v
+      } catch { /* JSON invalide → défaut */ }
+    }
+    return { tx: 40, ty: 40, scale: 1 }
+  })
+  // Persistance débouncée (pan/zoom = rafales d'événements).
+  useEffect(() => {
+    if (!vpKey) return
+    const h = setTimeout(() => { try { localStorage.setItem(vpKey, JSON.stringify(vp)) } catch { /* quota */ } }, 300)
+    return () => clearTimeout(h)
+  }, [vp, vpKey])
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   // Glisser depuis un port de sortie pour créer une connexion (drag-to-connect).
   const [connectDrag, setConnectDrag] = useState<{ source: string; port: string; sx: number; sy: number } | null>(null)
@@ -248,11 +295,11 @@ export default function FlowCanvas({
     for (const n of nodes) {
       const nx = vp.tx + n.position.x * vp.scale
       const ny = vp.ty + n.position.y * vp.scale
-      const nw = NODE_W * vp.scale, nh = NODE_H * vp.scale
+      const nw = nodeWidth(metas.get(n.type)) * vp.scale, nh = NODE_H * vp.scale
       if (nx < r.x + r.w && nx + nw > r.x && ny < r.y + r.h && ny + nh > r.y) ids.push(n.id)
     }
     return ids
-  }, [nodes, vp])
+  }, [nodes, vp, metas])
 
   // ── Menus contextuels (clic droit) ───────────────────────────────────────────
   const ic = (name: string) => {
@@ -267,7 +314,7 @@ export default function FlowCanvas({
   const resetView = () => setVp({ tx: 40, ty: 40, scale: 1 })
   const contentBounds = useCallback(() => {
     const pts = [
-      ...nodes.map(n => ({ x: n.position.x, y: n.position.y, w: NODE_W, h: NODE_H })),
+      ...nodes.map(n => ({ x: n.position.x, y: n.position.y, w: nodeWidth(metas.get(n.type)), h: NODE_H })),
       ...notes.map(n => ({ x: n.position.x, y: n.position.y, w: n.width, h: n.height })),
     ]
     if (!pts.length) return null
@@ -313,10 +360,33 @@ export default function FlowCanvas({
   ]
 
   // ── Pan & zoom ────────────────────────────────────────────────
+  // React attache `wheel` en PASSIVE (≥17) → son preventDefault est inopérant :
+  // sans ce listener natif non-passif, Ctrl+molette zoomerait la PAGE entière.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const h = (e: WheelEvent) => e.preventDefault()
+    el.addEventListener('wheel', h, { passive: false })
+    return () => el.removeEventListener('wheel', h)
+  }, [])
+
+  // Molette façon n8n/Figma : Ctrl/Cmd+scroll = zoom CENTRÉ SUR LE CURSEUR
+  // (le point sous la souris reste fixe), scroll simple = pan vertical,
+  // Shift+scroll = pan horizontal (les navigateurs le mappent déjà sur deltaX).
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault()
-    const factor = e.deltaY > 0 ? 0.9 : 1.1
-    setVp(v => ({ ...v, scale: Math.min(2.5, Math.max(0.25, v.scale * factor)) }))
+    if (e.ctrlKey || e.metaKey) {
+      const rect = containerRef.current?.getBoundingClientRect()
+      const cx = e.clientX - (rect?.left ?? 0), cy = e.clientY - (rect?.top ?? 0)
+      const factor = e.deltaY > 0 ? 0.9 : 1.1
+      setVp(v => {
+        const ns = Math.min(2.5, Math.max(0.25, v.scale * factor))
+        const k = ns / v.scale
+        return { scale: ns, tx: cx - (cx - v.tx) * k, ty: cy - (cy - v.ty) * k }
+      })
+      return
+    }
+    setVp(v => ({ ...v, tx: v.tx - e.deltaX, ty: v.ty - e.deltaY }))
   }
   const onSelectOne = (id: string) => onSelectionChange(new Set([id]))
 
@@ -439,7 +509,7 @@ export default function FlowCanvas({
     e.stopPropagation()
     const n = byId(source)
     const meta = n ? metas.get(n.type) : undefined
-    const sx = (n?.position.x ?? 0) + NODE_W
+    const sx = (n?.position.x ?? 0) + nodeWidth(meta)
     const sy = (n?.position.y ?? 0) + (n ? outPortYAt(n, meta, port, !!logs.get(n.id)) : 0)
     setConnectDrag({ source, port, sx, sy })
     setGhostEnd(toWorld(e.clientX, e.clientY))
@@ -448,13 +518,13 @@ export default function FlowCanvas({
 
   // ── Connexions IA (sous-nœud ↔ port d'agent, par le bas) ──────
   // X relatif d'un port de sous-entrée d'agent (réparti sur la largeur).
-  const subPortX = (idx: number, count: number) => (NODE_W * (idx + 1)) / (count + 1)
+  const subPortX = (idx: number, count: number, w: number = NODE_W) => (w * (idx + 1)) / (count + 1)
 
   const startAiFromSub = (e: React.PointerEvent, nodeId: string, kind: string) => {
     if (e.button !== 0) return
     e.stopPropagation()
     const n = byId(nodeId)
-    setAiDrag({ kind, sub: nodeId, sx: (n?.position.x ?? 0) + NODE_W / 2, sy: n?.position.y ?? 0 })
+    setAiDrag({ kind, sub: nodeId, sx: (n?.position.x ?? 0) + nodeWidth(n ? metas.get(n.type) : undefined) / 2, sy: n?.position.y ?? 0 })
     setGhostEnd(toWorld(e.clientX, e.clientY))
     containerRef.current?.setPointerCapture?.(e.pointerId)
   }
@@ -471,7 +541,7 @@ export default function FlowCanvas({
     const s = byId(e.source); const t = byId(e.target)
     if (!s || !t) return null
     const sm = metas.get(s.type), tm = metas.get(t.type)
-    const src = { x: s.position.x + NODE_W, y: s.position.y + outPortYAt(s, sm, e.source_port ?? 'default', !!logs.get(s.id)) }
+    const src = { x: s.position.x + nodeWidth(sm), y: s.position.y + outPortYAt(s, sm, e.source_port ?? 'default', !!logs.get(s.id)) }
     const dst = { x: t.position.x, y: t.position.y + inPortYAt(t, tm, !!logs.get(t.id)) }
     return { src, dst }
   }, [byId, metas, logs])
@@ -561,7 +631,7 @@ export default function FlowCanvas({
           {nodes.map(n => {
             const meta = metas.get(n.type)
             return <rect key={n.id} x={ox + n.position.x * scale} y={oy + n.position.y * scale}
-              width={NODE_W * scale} height={NODE_H * scale} fill={meta?.color ?? '#80868b'} rx={1.5} />
+              width={nodeWidth(meta) * scale} height={NODE_H * scale} fill={meta?.color ?? '#80868b'} rx={1.5} />
           })}
         </svg>
       </div>
@@ -681,9 +751,9 @@ export default function FlowCanvas({
             const idx = tm.subInputs.findIndex(si => si.id === (e.target_port ?? ''))
             if (idx < 0) return null
             // Extrémités = centres EXACTS des ports (cf. rendu des ports plus bas).
-            const ax = tg.position.x + subPortX(idx, tm.subInputs.length)
+            const ax = tg.position.x + subPortX(idx, tm.subInputs.length, nodeWidth(tm))
             const ay = tg.position.y + nodeBoxHeight(tg, tm, !!logs.get(tg.id))
-            const bx = s.position.x + NODE_W / 2, by = s.position.y
+            const bx = s.position.x + nodeWidth(metas.get(s.type)) / 2, by = s.position.y
             const k = Math.max(30, Math.abs(by - ay) / 2)
             const d = `M ${ax} ${ay} C ${ax} ${ay + k}, ${bx} ${by - k}, ${bx} ${by}`
             const log = logs.get(s.id)
@@ -729,6 +799,8 @@ export default function FlowCanvas({
           const disabled = !!n.settings?.disabled
           const summary = nodeSummary(n, meta)
           const isTrigger = meta?.category === 'trigger'
+          const color = meta?.color ?? '#80868b'
+          const w = nodeWidth(meta)
           const ring = selectedIds.has(n.id) ? 'ring-2 ring-[#e8824a]'
             : log?.status === 'success' ? 'ring-2 ring-green-500'
             : log?.status === 'error' ? 'ring-2 ring-red-500' : ''
@@ -740,7 +812,7 @@ export default function FlowCanvas({
               key={n.id}
               data-node={n.id}
               className={clsx('absolute select-none', disabled && 'opacity-55')}
-              style={{ left: n.position.x, top: n.position.y, width: NODE_W }}
+              style={{ left: n.position.x, top: n.position.y, width: w }}
               onPointerEnter={() => setHoverNode(n.id)}
               onPointerLeave={() => setHoverNode(h => h === n.id ? null : h)}
               onPointerDown={e => onNodePointerDown(e, n)}
@@ -767,25 +839,34 @@ export default function FlowCanvas({
                 </div>
               )}
 
-              <div className={clsx('rounded-lg border bg-white shadow-lg overflow-hidden', disabled ? 'border-dashed border-[#9aa0a6]' : 'border-[#dadce0]', ring)}>
-                {/* En-tête : tuile icône colorée + titre + badges */}
-                <div className="flex items-center gap-2 px-2.5 py-2">
-                  <span className={clsx('w-8 h-8 rounded-md flex items-center justify-center shrink-0', isTrigger && 'rounded-l-2xl')} style={{ background: meta?.color ?? '#80868b' }}>
-                    <LucideIcon name={meta?.icon ?? 'Box'} size={17} color="#fff" />
+              <div className={clsx('border bg-white overflow-hidden transition-shadow duration-150',
+                  isTrigger ? 'rounded-r-xl rounded-l-[26px]' : 'rounded-xl',
+                  hoverNode === n.id ? 'shadow-xl' : 'shadow-md',
+                  disabled ? 'border-dashed border-[#9aa0a6]' : 'border-[#dadce0]', ring)}>
+                {/* En-tête : bande teintée catégorie + tuile icône en dégradé + titre + badges */}
+                <div className="flex items-center gap-2.5 px-2.5 py-2" style={{ background: `${color}14` }}>
+                  <span className={clsx('w-9 h-9 flex items-center justify-center shrink-0 shadow-sm', isTrigger ? 'rounded-full' : 'rounded-[10px]')}
+                    style={{ background: `linear-gradient(135deg, ${shade(color, 26)}, ${color} 55%, ${shade(color, -24)})` }}>
+                    <LucideIcon name={meta?.icon ?? 'Box'} size={18} color="#fff" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1">
-                      <span className="text-[13px] font-medium text-[#202124] truncate">{n.name || meta?.name || n.type}</span>
+                      <span className="text-[13px] font-semibold text-[#202124] truncate">{n.name || meta?.name || n.type}</span>
                       {n.settings?.on_error === 'continue' && <Icons.ShieldCheck size={11} className="text-[#1e8e3e] shrink-0" />}
                       {!!n.settings?.retry_max && <Icons.RefreshCw size={11} className="text-[#80868b] shrink-0" />}
                       {n.settings?.note && <Icons.StickyNote size={11} className="text-[#f9ab00] shrink-0" />}
                     </div>
-                    <div className="text-[10px] text-[#80868b] truncate">{meta?.name ?? n.type}</div>
+                    {/* Sous-titre uniquement s'il apporte une info (nom personnalisé ≠ type). */}
+                    {(() => { const sub = meta?.name ?? n.type; const main = n.name || sub
+                      const catKey = CAT_LABEL_KEY[meta?.category ?? '']
+                      return main !== sub
+                        ? <div className="text-[10px] text-[#80868b] truncate">{sub}</div>
+                        : catKey ? <div className="text-[10px] truncate" style={{ color: shade(color, -30) }}>{t(catKey)}</div> : null })()}
                   </div>
                 </div>
                 {/* Sous-titre : résumé de la configuration */}
                 {summary && (
-                  <div className="px-2.5 pb-1.5 -mt-0.5 text-[10px] font-mono text-[#5f6368] truncate">{summary}</div>
+                  <div className="px-2.5 pb-1.5 -mt-0.5 text-[10px] text-[#5f6368] truncate">{summary}</div>
                 )}
                 {/* Pied d'exécution : statut + durée + nombre d'éléments */}
                 {log && (
@@ -799,29 +880,52 @@ export default function FlowCanvas({
                 {disabled && (
                   <div className="px-2.5 py-0.5 text-[9px] uppercase tracking-wider text-[#9aa0a6] border-t border-dashed border-[#dadce0]">{t('disabled', { defaultValue: 'Désactivé' })}</div>
                 )}
+                {/* Bande des sous-ports IA (agents) : libellés intégrés au bas de la
+                    carte, chaque libellé centré au-dessus de son losange. */}
+                {subInputs.length > 0 && (
+                  <div className="relative border-t" style={{ height: NODE_SUBBAND_H, background: `${color}0d`, borderColor: `${color}26` }}>
+                    {subInputs.map((si, i) => (
+                      <span key={si.id} className="absolute -translate-x-1/2 text-[8px] leading-none text-[#5f6368] whitespace-nowrap"
+                        style={{ left: subPortX(i, subInputs.length, w), top: 2 }}>
+                        {si.label}{si.required && <span className="text-red-400">*</span>}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* Port d'entrée — cible du glisser-pour-connecter (data-input). */}
-              {hasInput && (
-                <div
-                  data-input={n.id}
-                  className={clsx('absolute -left-2 w-3.5 h-3.5 rounded-full border-2 border-[#f1f3f4] cursor-crosshair',
-                    connectDrag && connectDrag.source !== n.id ? 'bg-[#e8824a] scale-125' : 'bg-[#80868b] hover:bg-[#e8824a]')}
-                  style={{ top: inPortYAt(n, meta, !!log) - 7, transition: 'transform .1s' }}
-                  title={t('port_in')}
-                />
-              )}
-              {/* Ports de sortie données — masqués pour les sous-nœuds IA. */}
-              {!aiOut && outs.map((port, i) => (
-                <div key={port} className="absolute -right-2 flex items-center" style={{ top: outPortYAt(n, meta, port, !!log) - 7 }}>
-                  {outs.length > 1 && <span className="absolute right-4 text-[9px] text-[#80868b] whitespace-nowrap">{meta?.outputs[i]?.label}</span>}
+              {/* Port d'entrée — cible du glisser-pour-connecter (data-input).
+                  Anneau creux quand libre, rempli couleur catégorie quand connecté. */}
+              {hasInput && (() => { const conn = edges.some(ed => ed.target === n.id && !ed.target_port)
+                return (
                   <div
-                    className={clsx('w-3.5 h-3.5 rounded-full border-2 border-[#f1f3f4] cursor-crosshair', connectDrag?.source === n.id && connectDrag?.port === port ? 'bg-[#e8824a]' : 'bg-[#80868b] hover:bg-[#e8824a]')}
-                    onPointerDown={e => startConnect(e, n.id, port)}
-                    title={t('port_out')}
+                    data-input={n.id}
+                    className={clsx('absolute -left-2 w-3.5 h-3.5 rounded-full border-2 cursor-crosshair shadow-sm',
+                      connectDrag && connectDrag.source !== n.id ? 'scale-125 border-[#e8824a] bg-[#e8824a]' : !conn && 'bg-white border-[#9aa0a6] hover:border-[#e8824a]')}
+                    style={{ top: inPortYAt(n, meta, !!log) - 7, transition: 'transform .1s',
+                             ...(conn && !(connectDrag && connectDrag.source !== n.id) ? { background: color, borderColor: '#fff' } : {}) }}
+                    title={t('port_in')}
                   />
-                </div>
-              ))}
+                ) })()}
+              {/* Ports de sortie données — masqués pour les sous-nœuds IA. */}
+              {!aiOut && outs.map((port, i) => { const conn = edges.some(ed => ed.source === n.id && (ed.source_port ?? 'default') === port)
+                const dragging = connectDrag?.source === n.id && connectDrag?.port === port
+                return (
+                  <div key={port} className="absolute -right-2 flex items-center" style={{ top: outPortYAt(n, meta, port, !!log) - 7 }}>
+                    {outs.length > 1 && (
+                      <span className="absolute right-4 text-[9px] text-[#5f6368] whitespace-nowrap bg-white/90 border border-[#e8eaed] rounded-full px-1.5 py-px shadow-sm">
+                        {meta?.outputs[i]?.label}
+                      </span>
+                    )}
+                    <div
+                      className={clsx('w-3.5 h-3.5 rounded-full border-2 cursor-crosshair shadow-sm',
+                        dragging ? 'border-[#e8824a] bg-[#e8824a]' : !conn && 'bg-white border-[#9aa0a6] hover:border-[#e8824a]')}
+                      style={conn && !dragging ? { background: color, borderColor: '#fff' } : undefined}
+                      onPointerDown={e => startConnect(e, n.id, port)}
+                      title={t('port_out')}
+                    />
+                  </div>
+                ) })}
 
               {/* Sous-nœud IA : port de sortie centré sur le BORD SUPÉRIEUR (se branche sur un agent). */}
               {aiOut && (
@@ -837,7 +941,7 @@ export default function FlowCanvas({
               {/* Agent IA : ports de SOUS-ENTRÉE répartis sous le nœud. Le losange est
                   centré EXACTEMENT sur (px, py) = point d'ancrage de l'arête IA. */}
               {subInputs.map((si, i) => {
-                const px = subPortX(i, subInputs.length)
+                const px = subPortX(i, subInputs.length, w)
                 const py = nodeBoxHeight(n, meta, !!log)
                 const filled = edges.some(ed => ed.target === n.id && ed.target_port === si.id)
                 return (
@@ -845,11 +949,11 @@ export default function FlowCanvas({
                     <div
                       data-ai-in={`${n.id}|${si.id}|${si.kind}`}
                       onPointerDown={e => startAiFromAgent(e, n.id, si.id, si.kind, n.position.x + px, n.position.y + py)}
-                      className={clsx('w-3 h-3 rotate-45 -translate-x-1/2 -translate-y-1/2 border-2 border-[#f1f3f4] cursor-crosshair',
-                        aiDrag?.sub && aiDrag.kind === si.kind ? 'bg-[#6750a4] scale-150' : filled ? 'bg-[#6750a4]' : 'bg-[#b3a4d4] hover:bg-[#6750a4]')}
+                      className={clsx('w-3 h-3 rotate-45 -translate-x-1/2 -translate-y-1/2 border-2 cursor-crosshair shadow-sm',
+                        aiDrag?.sub && aiDrag.kind === si.kind ? 'border-[#f1f3f4] bg-[#6750a4] scale-150'
+                        : filled ? 'border-white bg-[#6750a4]' : 'bg-white border-[#b3a4d4] hover:border-[#6750a4]')}
                       style={{ transition: 'transform .1s' }}
                     />
-                    <span className="absolute left-1/2 -translate-x-1/2 top-1.5 text-[8px] text-[#80868b] whitespace-nowrap">{si.label}{si.required && <span className="text-red-400">*</span>}</span>
                   </div>
                 )
               })}
