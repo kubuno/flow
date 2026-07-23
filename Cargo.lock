@@ -1892,8 +1892,8 @@ dependencies = [
 
 [[package]]
 name = "kubuno-drive"
-version = "0.1.0"
-source = "git+https://github.com/kubuno/drive?tag=drive-v0.1.0#a480544f61a7977aa051746dca4af87914dbb3be"
+version = "0.1.4"
+source = "git+https://github.com/kubuno/drive?tag=drive-v0.1.4#2433e18a410b94e88696be96044c786de9c06f6c"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1952,8 +1952,8 @@ dependencies = [
 
 [[package]]
 name = "kubuno-seccomp"
-version = "0.1.0"
-source = "git+https://github.com/kubuno/core?tag=seccomp-v0.1.0#802672107461a863de2e85d683408e573521d0d0"
+version = "0.1.1"
+source = "git+https://github.com/kubuno/core?tag=seccomp-v0.1.1#5a74e6d117d1c2c386af88902017341b88a0d7c7"
 dependencies = [
  "libc",
  "tracing",
@@ -3828,7 +3828,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -4661,7 +4661,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
