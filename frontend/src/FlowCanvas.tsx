@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as Icons from 'lucide-react'
 import clsx from 'clsx'
-import { MenuDropdown, type MenuItem } from '@ui'
+import { MenuDropdown, useIsMobile, type MenuItem } from '@ui'
 import type { NodeLog, NodeMeta, StickyNote, WorkflowEdge, WorkflowNode } from './types'
 
 export const NODE_W = 210
@@ -312,6 +312,9 @@ export default function FlowCanvas({
   }
   const zoomBy = (f: number) => setVp(v => ({ ...v, scale: Math.min(2.5, Math.max(0.25, v.scale * f)) }))
   const resetView = () => setVp({ tx: 40, ty: 40, scale: 1 })
+  // `fitToContent` est appelé par l'effet d'ajustement mobile déclaré plus BAS :
+  // on l'expose par une ref (référence directe = zone morte temporelle).
+  const fitToContentRef = useRef<(() => void) | null>(null)
   const contentBounds = useCallback(() => {
     const pts = [
       ...nodes.map(n => ({ x: n.position.x, y: n.position.y, w: nodeWidth(metas.get(n.type)), h: NODE_H })),
@@ -325,10 +328,15 @@ export default function FlowCanvas({
   const fitToContent = () => {
     const b = contentBounds()
     if (!b || !containerRef.current) { resetView(); return }
-    const r = containerRef.current.getBoundingClientRect(), pad = 60
-    const scale = Math.min(2.5, Math.max(0.25, Math.min((r.width - pad * 2) / (b.maxX - b.minX || 1), (r.height - pad * 2) / (b.maxY - b.minY || 1))))
-    setVp({ tx: pad - b.minX * scale, ty: pad - b.minY * scale, scale })
+    const r = containerRef.current.getBoundingClientRect()
+    // Marge proportionnelle : 60 px fixes mangeaient un tiers d'un écran de téléphone.
+    const pad = Math.max(16, Math.min(60, Math.round(Math.min(r.width, r.height) * 0.08)))
+    const bw = b.maxX - b.minX || 1, bh = b.maxY - b.minY || 1
+    const scale = Math.min(2.5, Math.max(0.25, Math.min((r.width - pad * 2) / bw, (r.height - pad * 2) / bh)))
+    // Contenu CENTRÉ dans le viewport (et non collé en haut à gauche).
+    setVp({ tx: (r.width - bw * scale) / 2 - b.minX * scale, ty: (r.height - bh * scale) / 2 - b.minY * scale, scale })
   }
+  fitToContentRef.current = fitToContent
   const multi = selectedIds.size > 1
   const nodeMenu = (n: WorkflowNode): MenuItem[] => [
     { type: 'action', label: t('ctx_configure',  { defaultValue: 'Configurer' }),         icon: ic('Settings2'),      onClick: () => onSelectOne(n.id) },
@@ -373,6 +381,42 @@ export default function FlowCanvas({
   // Molette façon n8n/Figma : Ctrl/Cmd+scroll = zoom CENTRÉ SUR LE CURSEUR
   // (le point sous la souris reste fixe), scroll simple = pan vertical,
   // Shift+scroll = pan horizontal (les navigateurs le mappent déjà sur deltaX).
+  // ── MOBILE ───────────────────────────────────────────────────────────────────
+  const isMobileView = useIsMobile()
+
+  // Ajustement automatique au contenu à l'ouverture (mobile) : sinon le graphe,
+  // posé à (40,40) au zoom 1, tombe hors de l'écran d'un téléphone.
+  const fittedRef = useRef(false)
+  useEffect(() => {
+    if (!isMobileView || fittedRef.current || !nodes.length) return
+    const r = containerRef.current?.getBoundingClientRect()
+    if (!r || r.width < 2) return
+    fittedRef.current = true
+    const tm = setTimeout(() => fitToContentRef.current?.(), 60)
+    return () => clearTimeout(tm)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobileView, nodes.length])
+  // Gestes tactiles : 2 doigts = pincement (zoom) + déplacement ; 1 doigt sur le
+  // FOND = panoramique (le lasso n'a pas de sens au doigt) ; appui long = menu
+  // contextuel (il n'y a pas de clic droit).
+  const ptrsRef = useRef(new Map<number, { x: number; y: number }>())
+  const pinchRef = useRef<{ d: number; mx: number; my: number } | null>(null)
+  const touchPanRef = useRef<{ x: number; y: number } | null>(null)
+  const lpRef = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null)
+  const lpFiredRef = useRef(false)
+  const cancelLongPress = () => { if (lpRef.current) { clearTimeout(lpRef.current.timer); lpRef.current = null } }
+
+  // ⚠️ Le clic souris SYNTHÉTIQUE du relâchement retomberait sur le menu à peine
+  // ouvert : on supprime la séquence via `preventDefault` sur le `touchend`
+  // (drapeau, pas fenêtre de temps — le clic arrive au relâchement).
+  useEffect(() => {
+    const c = containerRef.current
+    if (!c) return
+    const onTouchEnd = (ev: TouchEvent) => { if (lpFiredRef.current) { ev.preventDefault(); lpFiredRef.current = false } }
+    c.addEventListener('touchend', onTouchEnd, { passive: false })
+    return () => c.removeEventListener('touchend', onTouchEnd)
+  }, [])
+
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault()
     if (e.ctrlKey || e.metaKey) {
@@ -389,6 +433,75 @@ export default function FlowCanvas({
     setVp(v => ({ ...v, tx: v.tx - e.deltaX, ty: v.ty - e.deltaY }))
   }
   const onSelectOne = (id: string) => onSelectionChange(new Set([id]))
+
+  // Enveloppes TACTILES du conteneur (pincement / panoramique / appui long).
+  const onContainerPointerDownTouch = (e: React.PointerEvent) => {
+    const ptrs = ptrsRef.current
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (e.pointerType !== 'mouse' && ptrs.size === 2) {
+      cancelLongPress()
+      touchPanRef.current = null
+      const [a, b] = [...ptrs.values()]
+      pinchRef.current = { d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }
+      return
+    }
+    if (ptrs.size > 1) return
+    if (e.pointerType !== 'mouse') {
+      // Fond touché → panoramique de la vue (et non lasso).
+      const onBg = e.target === containerRef.current || !!(e.target as HTMLElement).dataset.bg
+      containerRef.current?.setPointerCapture?.(e.pointerId)
+      const x = e.clientX, y = e.clientY
+      cancelLongPress()
+      lpRef.current = { x, y, timer: setTimeout(() => {
+        lpRef.current = null
+        lpFiredRef.current = true
+        touchPanRef.current = null
+        navigator.vibrate?.(10)
+        openMenu(e as unknown as React.MouseEvent, canvasMenu(toWorld(x, y)))
+      }, 500) }
+      if (onBg) { touchPanRef.current = { x, y }; return }
+    }
+    onContainerPointerDown(e)
+  }
+
+  const onPointerMoveTouch = (e: React.PointerEvent) => {
+    const ptrs = ptrsRef.current
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const pinch = pinchRef.current
+    if (pinch && ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()]
+      const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
+      const rect = containerRef.current?.getBoundingClientRect()
+      const cx = mx - (rect?.left ?? 0), cy = my - (rect?.top ?? 0)
+      setVp(v => {
+        const ns = Math.min(2.5, Math.max(0.25, v.scale * (d / pinch.d)))
+        const k = ns / v.scale
+        return { scale: ns, tx: cx - (cx - v.tx) * k + (mx - pinch.mx), ty: cy - (cy - v.ty) * k + (my - pinch.my) }
+      })
+      pinchRef.current = { d, mx, my }
+      return
+    }
+    const lp = lpRef.current
+    if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10) cancelLongPress()
+    const tp = touchPanRef.current
+    if (tp) {
+      setVp(v => ({ ...v, tx: v.tx + (e.clientX - tp.x), ty: v.ty + (e.clientY - tp.y) }))
+      touchPanRef.current = { x: e.clientX, y: e.clientY }
+      return
+    }
+    onPointerMove(e)
+  }
+
+  const onPointerUpTouch = (e: React.PointerEvent) => {
+    const ptrs = ptrsRef.current
+    ptrs.delete(e.pointerId)
+    if (pinchRef.current) { if (ptrs.size < 2) pinchRef.current = null; return }
+    cancelLongPress()
+    if (touchPanRef.current) { touchPanRef.current = null; return }
+    if (lpFiredRef.current) return
+    onPointerUp(e)
+  }
 
   const onContainerPointerDown = (e: React.PointerEvent) => {
     if (e.button === 1) {
@@ -643,11 +756,14 @@ export default function FlowCanvas({
       ref={containerRef}
       data-bg="1"
       className={clsx('relative w-full h-full overflow-hidden bg-[#f1f3f4]', grabbing ? 'cursor-grabbing' : 'cursor-default')}
-      style={{ backgroundImage: 'radial-gradient(#c4c7cc 1px, transparent 1px)', backgroundSize: `${24 * vp.scale}px ${24 * vp.scale}px`, backgroundPosition: `${vp.tx}px ${vp.ty}px` }}
+      // ⚠️ `touch-action: none` : sans lui le navigateur s'approprie le geste après
+      // quelques déplacements (défilement de page) et annule le flux pointeur.
+      style={{ touchAction: 'none', backgroundImage: 'radial-gradient(#c4c7cc 1px, transparent 1px)', backgroundSize: `${24 * vp.scale}px ${24 * vp.scale}px`, backgroundPosition: `${vp.tx}px ${vp.ty}px` }}
       onWheel={onWheel}
-      onPointerDown={onContainerPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
+      onPointerDown={onContainerPointerDownTouch}
+      onPointerMove={onPointerMoveTouch}
+      onPointerUp={onPointerUpTouch}
+      onPointerCancel={onPointerUpTouch}
       onPointerLeave={onPointerUp}
       onAuxClick={e => { if (e.button === 1) e.preventDefault() }}
       onContextMenu={e => openMenu(e, canvasMenu(toWorld(e.clientX, e.clientY)))}
@@ -672,7 +788,7 @@ export default function FlowCanvas({
               <Icons.GripHorizontal size={12} className="text-black/30" />
             </div>
             <textarea
-              className="flex-1 w-full resize-none bg-transparent outline-none px-2 py-1 text-[12px] text-[#3c4043] leading-snug"
+              className="flex-1 w-full resize-none bg-transparent outline-none px-2 py-1 text-xs text-[#3c4043] leading-snug"
               value={note.text}
               placeholder={t('note_placeholder', { defaultValue: 'Écrire une note…' })}
               onChange={e => onEditNote(note.id, e.target.value)}
@@ -851,7 +967,7 @@ export default function FlowCanvas({
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1">
-                      <span className="text-[13px] font-semibold text-[#202124] truncate">{n.name || meta?.name || n.type}</span>
+                      <span className="text-xs font-semibold text-[#202124] truncate">{n.name || meta?.name || n.type}</span>
                       {n.settings?.on_error === 'continue' && <Icons.ShieldCheck size={11} className="text-[#1e8e3e] shrink-0" />}
                       {!!n.settings?.retry_max && <Icons.RefreshCw size={11} className="text-[#80868b] shrink-0" />}
                       {n.settings?.note && <Icons.StickyNote size={11} className="text-[#f9ab00] shrink-0" />}
@@ -878,14 +994,14 @@ export default function FlowCanvas({
                   </div>
                 )}
                 {disabled && (
-                  <div className="px-2.5 py-0.5 text-[9px] uppercase tracking-wider text-[#9aa0a6] border-t border-dashed border-[#dadce0]">{t('disabled', { defaultValue: 'Désactivé' })}</div>
+                  <div className="px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-[#9aa0a6] border-t border-dashed border-[#dadce0]">{t('disabled', { defaultValue: 'Désactivé' })}</div>
                 )}
                 {/* Bande des sous-ports IA (agents) : libellés intégrés au bas de la
                     carte, chaque libellé centré au-dessus de son losange. */}
                 {subInputs.length > 0 && (
                   <div className="relative border-t" style={{ height: NODE_SUBBAND_H, background: `${color}0d`, borderColor: `${color}26` }}>
                     {subInputs.map((si, i) => (
-                      <span key={si.id} className="absolute -translate-x-1/2 text-[8px] leading-none text-[#5f6368] whitespace-nowrap"
+                      <span key={si.id} className="absolute -translate-x-1/2 text-[10px] leading-none text-[#5f6368] whitespace-nowrap"
                         style={{ left: subPortX(i, subInputs.length, w), top: 2 }}>
                         {si.label}{si.required && <span className="text-red-400">*</span>}
                       </span>
@@ -913,7 +1029,7 @@ export default function FlowCanvas({
                 return (
                   <div key={port} className="absolute -right-2 flex items-center" style={{ top: outPortYAt(n, meta, port, !!log) - 7 }}>
                     {outs.length > 1 && (
-                      <span className="absolute right-4 text-[9px] text-[#5f6368] whitespace-nowrap bg-white/90 border border-[#e8eaed] rounded-full px-1.5 py-px shadow-sm">
+                      <span className="absolute right-4 text-[10px] text-[#5f6368] whitespace-nowrap bg-white/90 border border-[#e8eaed] rounded-full px-1.5 py-px shadow-sm">
                         {meta?.outputs[i]?.label}
                       </span>
                     )}
@@ -976,16 +1092,17 @@ export default function FlowCanvas({
         </div>
       )}
 
-      {renderMinimap()}
+      {!isMobileView && renderMinimap()}
 
-      {/* Contrôle zoom */}
-      <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-[#ffffff] border border-[#dadce0] rounded-lg px-2 py-1 text-[#5f6368] text-xs no-print">
+      {/* Contrôle zoom — desktop seulement (au doigt : pincement ; « Ajuster »
+          reste accessible par le ruban et le menu contextuel). */}
+      {!isMobileView && <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-[#ffffff] border border-[#dadce0] rounded-lg px-2 py-1 text-[#5f6368] text-xs no-print">
         <button className="px-1.5 hover:text-[#202124]" onClick={() => zoomBy(0.9)}>−</button>
         <span className="w-10 text-center">{Math.round(vp.scale * 100)}%</span>
         <button className="px-1.5 hover:text-[#202124]" onClick={() => zoomBy(1.1)}>+</button>
         <button className="px-1.5 hover:text-[#202124]" onClick={fitToContent} title={t('ctx_fit', { defaultValue: 'Ajuster' })}>⤢</button>
         <button className="px-1.5 hover:text-[#202124]" onClick={resetView} title={t('reset')}>⟲</button>
-      </div>
+      </div>}
 
       {menu && (
         <MenuDropdown items={menu.items} pos={{ top: menu.y, left: menu.x }} onClose={() => setMenu(null)} />

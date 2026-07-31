@@ -13,7 +13,7 @@ function StatusIcon({ s }: { s: string }) {
   return <Loader2 size={15} className="text-blue-400 animate-spin" />
 }
 
-export default function ExecutionHistory({ workflowId, onClose }: { workflowId: string; onClose: () => void }) {
+export default function ExecutionHistory({ workflowId, onClose, fullWidth }: { workflowId: string; onClose: () => void; fullWidth?: boolean }) {
   const { t } = useTranslation('flow')
   const [execs, setExecs] = useState<Execution[]>([])
   const [openId, setOpenId] = useState<string | null>(null)
@@ -30,7 +30,7 @@ export default function ExecutionHistory({ workflowId, onClose }: { workflowId: 
   }
 
   return (
-    <div className="w-96 max-w-[90vw] h-full bg-[#ffffff] border-l border-[#dadce0] flex flex-col no-print">
+    <div className={(fullWidth ? 'w-full h-full' : 'w-96 max-w-[90vw] h-full border-l border-[#dadce0]') + ' bg-[#ffffff] flex flex-col no-print'}>
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#dadce0]">
         <span className="text-[#5f6368] text-sm font-semibold">{t('exec_history')}</span>
         <button className="text-[#80868b] hover:text-[#202124]" onClick={onClose}><X size={18} /></button>

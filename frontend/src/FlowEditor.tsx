@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { useDebouncedAutosave, prompt, useAuthStore } from '@kubuno/sdk'
-import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy, Star, ClipboardPaste, Scissors } from 'lucide-react'
+import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy, Star, ClipboardPaste, Scissors, PenLine, Eye, X } from 'lucide-react'
+import { useIsMobile, useSaveShortcut } from '@ui'
 import { flowApi, streamExecution } from './api'
 import type { CredentialMeta, ExprHelp, NodeLog, NodeMeta, StickyNote, Workflow, WorkflowDefinition, WorkflowEdge, WorkflowNode } from './types'
 import FlowCanvas, { NODE_W } from './FlowCanvas'
@@ -17,7 +18,7 @@ import { userColor, PresenceAvatars } from './collab/presence'
 import FlowStartContent from './FlowStartContent'
 import { OfficeShell } from './shell/OfficeShell'
 import { THEME_FLOW } from './ribbon/officeThemes'
-import { useFileTab, backstageLabels, InfoPanel } from './ribbon/ModuleBackstage'
+import { useFileTab, backstageLabels, BackstageInfo } from './ribbon/ModuleBackstage'
 import { SaveButton } from './ribbon/SaveButton'
 import type { RibbonTab } from './ribbon/types'
 
@@ -157,6 +158,15 @@ export default function FlowEditor() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  const isMobileView = useIsMobile()
+  // Mobile : le workflow s'ouvre en LECTURE (exploration du graphe au doigt) ;
+  // « Modifier » bascule en édition — même modèle que les éditeurs Office.
+  const [mode, setMode] = useState<'read' | 'edit'>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches ? 'read' : 'edit')
+  const readMobile = isMobileView && mode === 'read'
+
+  const onSelectionChangeClear = () => setSelectedIds(new Set())
 
   const markDirty = () => setDirty(true)
 
@@ -350,6 +360,9 @@ export default function FlowEditor() {
     if (name !== null) patchNode(nid, { name: name || null })
   }, [yNodes, metas, patchNode, t])
 
+  // Ctrl+S / ⌘S saves immediately.
+  useSaveShortcut(() => { void save() })
+
   const save = useCallback(async () => {
     if (!wf || !ready) return // ne jamais sauvegarder l'état pré-synchro (vide)
     setSaving(true)
@@ -502,14 +515,19 @@ export default function FlowEditor() {
     openKey: id,
     doc: {
       info: (
-        <InfoPanel
-          title={wf?.name || t('untitled', { defaultValue: 'Sans titre' })}
+        <BackstageInfo
+          title={titleDraft}
+          onTitleChange={(v) => { setTitleDraft(v); markDirty() }}
+          onTitleCommit={save}
+          extension=".kbflw"
           subtitle={t('title', { defaultValue: 'Flow' })}
-          rows={[
+          general={[
             [t('office_bs_info_type', { defaultValue: 'Type' }), t('title', { defaultValue: 'Flow' })],
+            [t('rb_info_status', { defaultValue: 'Statut' }), wf?.status === 'active' ? t('active') : t('activate', { defaultValue: 'Inactif' })],
+          ]}
+          stats={[
             [t('rb_info_nodes', { defaultValue: 'Nœuds' }), nodes.length],
             [t('rb_info_edges', { defaultValue: 'Connexions' }), edges.length],
-            [t('rb_info_status', { defaultValue: 'Statut' }), wf?.status === 'active' ? t('active') : t('activate', { defaultValue: 'Inactif' })],
           ]}
         />
       ),
@@ -550,7 +568,9 @@ export default function FlowEditor() {
 
   return (
     <OfficeShell
-      ribbon={[fileTab, ...ribbon]}
+      // Lecture mobile : ruban vide → plein écran (ni barre du bas ni réservation).
+      ribbon={readMobile ? [] : [fileTab, ...ribbon]}
+      hideHeaderActions={readMobile}
       activeTabId={activeTabId}
       onTabChange={onTabChange}
       theme={THEME_FLOW}
@@ -561,9 +581,24 @@ export default function FlowEditor() {
       onTitleChange={(v) => { setTitleDraft(v); markDirty() }}
       onTitleCommit={save}
       titlePlaceholder={t('untitled')}
-      saveStatus={saving ? t('saving') : dirty ? t('modified') : t('saved')}
       onBack={() => navigate('/flow')}
-      titleActions={<>{saveButton}{starButton}</>}
+      titleActions={<>
+        {/* Mobile : bascule lecture ↔ édition (pastille « Modifier » en lecture). */}
+        {readMobile ? (
+          <button onClick={() => setMode('edit')}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-white/15 text-white text-xs font-medium border border-white/25 hover:bg-white/25 transition-colors flex-shrink-0"
+            title={t('edit', { defaultValue: 'Modifier' })}>
+            <PenLine size={15} /> {t('edit', { defaultValue: 'Modifier' })}
+          </button>
+        ) : isMobileView && (
+          <button onClick={() => setMode('read')}
+            className="p-1.5 rounded hover:bg-white/10 transition-colors flex-shrink-0 text-white/90"
+            title={t('read_mode', { defaultValue: 'Lecture' })}>
+            <Eye size={16} />
+          </button>
+        )}
+        {!readMobile && <>{saveButton}{starButton}</>}
+      </>}
       onDelete={handleDelete}
       deleteTitle={t('delete_workflow')}
       deleteConfirm={{ title: t('delete_confirm_title'), message: t('delete_confirm_msg'), confirmLabel: t('delete'), variant: 'danger' }}
@@ -610,19 +645,58 @@ export default function FlowEditor() {
           {showPicker && <NodePicker catalog={catalog} onPick={addNode} onClose={() => { pendingPlacement.current = null; setShowPicker(false) }} />}
         </div>
 
+        {/* Panneau de configuration du nœud : volet latéral sur desktop, FEUILLE DU
+            BAS sur mobile (un volet de 320 px ne laisse rien au graphe). */}
         {selected && !showHistory && (
-          <NodeConfigPanel
-            node={selected} meta={metas.get(selected.type)} workflowId={id}
-            lastLog={logs.get(selected.id)} exprHelp={exprHelp}
-            credentials={credentials}
-            onManageCredentials={(preset) => setCredsManager({ open: true, preset })}
-            onChange={(patch) => patchNode(selected.id, patch)}
-            onDelete={() => deleteNode(selected.id)}
-          />
+          isMobileView ? (
+            <>
+              <div className="fixed inset-0 z-[60] bg-black/40" style={{ animation: 'kb-sheet-fade .15s ease-out' }}
+                onClick={() => onSelectionChangeClear()} />
+              <div className="fixed left-0 right-0 bottom-0 z-[61] flex flex-col rounded-t-2xl overflow-hidden bg-white shadow-2xl"
+                style={{ height: '70vh', paddingBottom: 'env(safe-area-inset-bottom)', animation: 'kb-sheet-up .18s ease-out' }}>
+                <div className="flex items-center justify-end px-2 pt-2 flex-shrink-0">
+                  <button onClick={() => onSelectionChangeClear()}
+                    className="w-9 h-9 flex items-center justify-center rounded-full text-[#5f6368] active:bg-[#f1f3f4]">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <NodeConfigPanel
+                    node={selected} meta={metas.get(selected.type)} workflowId={id}
+                    lastLog={logs.get(selected.id)} exprHelp={exprHelp}
+                    credentials={credentials}
+                    onManageCredentials={(preset) => setCredsManager({ open: true, preset })}
+                    onChange={(patch) => patchNode(selected.id, patch)}
+                    onDelete={() => deleteNode(selected.id)}
+                    fullWidth
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <NodeConfigPanel
+              node={selected} meta={metas.get(selected.type)} workflowId={id}
+              lastLog={logs.get(selected.id)} exprHelp={exprHelp}
+              credentials={credentials}
+              onManageCredentials={(preset) => setCredsManager({ open: true, preset })}
+              onChange={(patch) => patchNode(selected.id, patch)}
+              onDelete={() => deleteNode(selected.id)}
+            />
+          )
         )}
 
         {showHistory && wf && (
-          <ExecutionHistory workflowId={wf.id} onClose={() => setShowHistory(false)} />
+          isMobileView ? (
+            <>
+              <div className="fixed inset-0 z-[60] bg-black/40" onClick={() => setShowHistory(false)} />
+              <div className="fixed left-0 right-0 bottom-0 z-[61] flex flex-col rounded-t-2xl overflow-hidden bg-white shadow-2xl"
+                style={{ height: '70vh', paddingBottom: 'env(safe-area-inset-bottom)', animation: 'kb-sheet-up .18s ease-out' }}>
+                <ExecutionHistory workflowId={wf.id} onClose={() => setShowHistory(false)} fullWidth />
+              </div>
+            </>
+          ) : (
+            <ExecutionHistory workflowId={wf.id} onClose={() => setShowHistory(false)} />
+          )
         )}
       </div>
 

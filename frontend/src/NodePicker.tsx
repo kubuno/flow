@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useIsMobile } from '@ui'
 import { useTranslation } from 'react-i18next'
 import * as Icons from 'lucide-react'
 import { X, Search, ChevronRight, ChevronDown } from 'lucide-react'
@@ -14,6 +15,7 @@ interface Group { id: string; label: string; match: (m: NodeMeta) => boolean }
 
 export default function NodePicker({ catalog, onPick, onClose }: { catalog: NodeMeta[]; onPick: (meta: NodeMeta) => void; onClose: () => void }) {
   const { t } = useTranslation('flow')
+  const isMobile = useIsMobile()
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<Set<string>>(new Set()) // sections dépliées (repliées par défaut)
 
@@ -48,7 +50,9 @@ export default function NodePicker({ catalog, onPick, onClose }: { catalog: Node
 
   return (
     <div className="absolute inset-0 z-30 bg-black/40 flex justify-end" onClick={onClose}>
-      <div className="w-80 h-full bg-[#ffffff] border-l border-[#dadce0] flex flex-col" onClick={e => e.stopPropagation()}>
+      {/* Mobile : la palette prend TOUTE la largeur (un tiroir de 320 px laissait
+          une bande de fond inutile et des cibles serrées). */}
+      <div className={(isMobile ? 'w-full' : 'w-80 border-l border-[#dadce0]') + ' h-full bg-[#ffffff] flex flex-col'} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#dadce0]">
           <span className="text-[#5f6368] text-sm font-semibold">{t('add_node_title')}</span>
           <button className="text-[#80868b] hover:text-[#202124]" onClick={onClose}><X size={18} /></button>

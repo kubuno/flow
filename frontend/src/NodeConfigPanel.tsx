@@ -18,6 +18,8 @@ interface Props {
   onManageCredentials?: (presetType?: string) => void
   onChange: (patch: Partial<WorkflowNode>) => void
   onDelete: () => void
+  /** Rendu en feuille du bas (mobile) : le panneau prend toute la largeur. */
+  fullWidth?: boolean
 }
 
 /** Sélecteur de credential (filtré par type accepté) + bouton de gestion. */
@@ -102,7 +104,7 @@ function DataPanel({ title, data, accent }: { title: string; data: unknown; acce
   )
 }
 
-export default function NodeConfigPanel({ node, meta, workflowId, lastLog, exprHelp, credentials = [], onManageCredentials, onChange, onDelete }: Props) {
+export default function NodeConfigPanel({ node, meta, workflowId, lastLog, exprHelp, credentials = [], onManageCredentials, onChange, onDelete, fullWidth }: Props) {
   const { t } = useTranslation('flow')
   const [testing, setTesting] = useState(false)
   const [testOut, setTestOut] = useState<{ ok: boolean; data: unknown } | null>(null)
@@ -136,7 +138,7 @@ export default function NodeConfigPanel({ node, meta, workflowId, lastLog, exprH
   const isTrigger = meta?.category === 'trigger'
 
   return (
-    <div className="w-80 max-w-[85vw] h-full bg-[#ffffff] border-l border-[#dadce0] flex flex-col no-print">
+    <div className={(fullWidth ? 'w-full h-full' : 'w-80 max-w-[85vw] h-full border-l border-[#dadce0]') + ' bg-[#ffffff] flex flex-col no-print'}>
       <div className="px-3 py-2 border-b border-[#dadce0]">
         <div className="text-[10px] uppercase tracking-wider text-[#80868b]">{meta?.name ?? node.type}</div>
         <input

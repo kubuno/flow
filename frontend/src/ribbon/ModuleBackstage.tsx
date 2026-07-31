@@ -4,6 +4,7 @@
 // document : la chrome éditeur avec le backstage ouvert + verrouillé.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Home, Info, FileDown, Printer, X } from 'lucide-react'
 import type { WorkspaceTheme } from '@kubuno/sdk'
 import { OfficeShell } from '../shell/OfficeShell'
@@ -61,7 +62,7 @@ export function moduleBackstageSections(
           {doc.exports.map(e => (
             <button key={e.label} onClick={e.onClick} className="flex items-center gap-3 w-full max-w-md text-left px-4 py-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors">
               <span className="text-primary">{e.icon}</span>
-              <span className="flex flex-col"><span className="text-sm font-medium text-text-primary">{e.label}</span><span className="text-xs text-text-tertiary">{e.sub}</span></span>
+              <span className="flex flex-col"><span className="text-sm font-medium text-text-primary">{e.label}</span><span className="text-sm text-text-tertiary">{e.sub}</span></span>
             </button>
           ))}
         </div>
@@ -73,17 +74,109 @@ export function moduleBackstageSections(
   return sections
 }
 
+// Rangées clé/valeur d'un panneau d'informations (propriétés ou statistiques).
+export function InfoRows({ rows }: { rows: Array<[string, string | number]> }) {
+  if (!rows.length) return <div className="py-8 text-sm text-text-tertiary">—</div>
+  return (
+    <>
+      {rows.map(([k, v]) => (
+        <div key={k} className="flex justify-between gap-6 py-1.5 border-b border-border/60 text-sm">
+          <span className="text-text-secondary">{k}</span><span className="font-medium text-text-primary text-right">{v}</span>
+        </div>
+      ))}
+    </>
+  )
+}
+
 // Panneau « Informations » générique (propriétés du document).
 export function InfoPanel({ title, rows, subtitle }: { title: string; subtitle?: string; rows: Array<[string, string | number]> }) {
   return (
     <div className="p-8 max-w-2xl">
       <h2 className="text-xl font-semibold text-text-primary mb-1">{title}</h2>
       {subtitle && <p className="text-sm text-text-tertiary mb-6">{subtitle}</p>}
-      {rows.map(([k, v]) => (
-        <div key={k} className="flex justify-between gap-6 py-1.5 border-b border-border/60 text-sm">
-          <span className="text-text-secondary">{k}</span><span className="font-medium text-text-primary text-right">{v}</span>
+      <InfoRows rows={rows} />
+    </div>
+  )
+}
+
+// Panneau « Informations » à ONGLETS (façon Office récent). Le NOM du document reste
+// AU-DESSUS et À L'EXTÉRIEUR des onglets. Onglets : « Général » (propriétés courantes),
+// « Résumé », « Statistiques » (compteurs déplacés depuis Général), « Personnalisation ».
+// Le contenu de Résumé/Personnalisation (et le complément de Statistiques) sera fourni
+// plus tard → placeholder en attendant.
+export function BackstageInfo({ title, subtitle, general, stats, summary, custom, onTitleChange, onTitleCommit, extension }: {
+  title:     string
+  subtitle?: string
+  general:   Array<[string, string | number]>   // onglet Général (propriétés)
+  stats?:    Array<[string, string | number]>   // onglet Statistiques (compteurs)
+  summary?:  ReactNode                           // onglet Résumé (fourni plus tard)
+  custom?:   ReactNode                           // onglet Personnalisation (fourni plus tard)
+  onTitleChange?: (v: string) => void            // si fourni : le nom devient un champ éditable (renommage)
+  onTitleCommit?: () => void                     // validation (blur/Entrée)
+  extension?: string                             // extension du fichier (ex. « .kbook »), affichée après le champ
+}) {
+  const { t } = useTranslation()
+  const [tab, setTab] = useState<'general' | 'summary' | 'stats' | 'custom'>('general')
+  const titleRef = useRef<HTMLInputElement>(null)
+  // Focus AUTOMATIQUE du nom à l'arrivée sur Informations (le panneau est démonté/remonté
+  // à chaque ouverture de l'onglet Fichier → focus à chaque venue). rAF : le champ vient
+  // d'apparaître dans le portail du backstage.
+  useEffect(() => {
+    if (!onTitleChange) return
+    const r = requestAnimationFrame(() => {
+      const el = titleRef.current
+      if (!el) return
+      el.focus()
+      // Curseur en FIN de texte (pas de sélection : taper n'efface plus le nom).
+      const n = el.value.length
+      el.setSelectionRange(n, n)
+    })
+    return () => cancelAnimationFrame(r)
+  }, [onTitleChange])
+  const tabs = [
+    { id: 'general', label: t('office_info_tab_general', { defaultValue: 'Général' }) },
+    { id: 'summary', label: t('office_info_tab_summary', { defaultValue: 'Résumé' }) },
+    { id: 'stats',   label: t('office_info_tab_stats',   { defaultValue: 'Statistiques' }) },
+    { id: 'custom',  label: t('office_info_tab_custom',  { defaultValue: 'Personnalisation' }) },
+  ] as const
+  const placeholder = <div className="py-10 text-sm text-text-tertiary">{t('office_info_soon', { defaultValue: 'Cette section sera bientôt disponible.' })}</div>
+  // L'extension garde la MÊME taille et police que le nom (demande user), en teinte atténuée.
+  const extEl = extension ? <span className="text-xl font-semibold text-text-tertiary whitespace-pre select-none pointer-events-none">{extension}</span> : null
+  return (
+    <div className="p-8 max-w-2xl">
+      {/* Nom du document : AU-DESSUS et HORS des onglets. Éditable (renommage) si onTitleChange :
+          champ auto-dimensionné à la largeur du nom (`field-sizing:content`), extension juste après. */}
+      {onTitleChange ? (
+        <div className="flex items-baseline mb-1 max-w-full min-w-0">
+          <input
+            ref={titleRef}
+            value={title}
+            onChange={e => onTitleChange(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
+            onBlur={() => onTitleCommit?.()}
+            aria-label={t('office_info_rename', { defaultValue: 'Nom du fichier' })}
+            className="text-xl font-semibold text-text-primary bg-transparent outline-none border-b border-transparent focus:border-primary/60 [field-sizing:content] min-w-[1ch] max-w-full"
+          />
+          {extEl}
         </div>
-      ))}
+      ) : (
+        <h2 className="text-xl font-semibold text-text-primary mb-1 flex items-baseline min-w-0">
+          <span className="truncate">{title}</span>{extEl}
+        </h2>
+      )}
+      {subtitle && <p className="text-sm text-text-tertiary mb-4">{subtitle}</p>}
+      <div className="flex gap-1 border-b border-border mb-5">
+        {tabs.map(tb => (
+          <button key={tb.id} onClick={() => setTab(tb.id)}
+            className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${tab === tb.id ? 'border-primary text-primary font-medium' : 'border-transparent text-text-secondary hover:text-text-primary'}`}>
+            {tb.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'general' && <InfoRows rows={general} />}
+      {tab === 'summary' && (summary ?? placeholder)}
+      {tab === 'stats'   && (stats && stats.length ? <InfoRows rows={stats} /> : placeholder)}
+      {tab === 'custom'  && (custom ?? placeholder)}
     </div>
   )
 }
@@ -144,9 +237,15 @@ export function useFileTab(opts: {
     lastOpenKey.current = opts.openKey
   }, [opts.openKey, home])
   const sections = moduleBackstageSections(opts.labels, opts.startContent, opts.doc)
+  // Document ouvert → à chaque OUVERTURE de l'onglet Fichier, on affiche « Informations »
+  // par défaut (et non la page d'accueil). Le backstage est démonté en quittant l'onglet
+  // (Ribbon : `backstageActive && createPortal`), donc cet `initial` se ré-applique à
+  // chaque retour. Sans document ouvert (`ModuleHome`) → pas de section Informations,
+  // on garde l'accueil.
+  const backstageInitial = opts.doc?.info != null ? 'info' : undefined
   const fileTab: RibbonTab = {
     id: 'file', label: opts.labels.file, groups: [],
-    backstage: <Backstage sections={sections} theme={opts.theme} onBack={() => setActive(prev.current)} />,
+    backstage: <Backstage sections={sections} theme={opts.theme} initial={backstageInitial} onBack={() => setActive(prev.current)} />,
   }
   return { fileTab, activeTabId: active, onTabChange }
 }

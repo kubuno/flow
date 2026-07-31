@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { WorkspaceTheme } from '@kubuno/sdk'
+import { useIsMobile } from '@ui'
 import { fileAccentFor } from './officeThemes'
 
 export interface BackstageSection {
@@ -39,10 +40,41 @@ export function Backstage({ sections, theme, onBack, locked = false, initial }: 
     return () => window.removeEventListener('keydown', h)
   }, [locked, onBack])
 
+  const isMobile = useIsMobile()
+  const accentBg = `var(--kbn-office-file-accent, ${fileAccentFor(theme.accent)})`
+
+  // Mobile : le rail vertical (240px) mangerait la moitié de l'écran — les
+  // sections deviennent une rangée de chips horizontale sous l'en-tête, le
+  // contenu occupe toute la largeur.
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-full w-full" style={{ background: theme.bg, color: theme.text }} data-module="office">
+        <div className="flex items-center gap-1 px-2 py-2 overflow-x-auto flex-shrink-0"
+          style={{ background: accentBg, color: 'var(--kbn-office-file-accent-text, #fff)', scrollbarWidth: 'none' }}>
+          {sections.map(s => {
+            const isActive = active === s.id && s.content != null
+            return (
+              <button key={s.id} disabled={s.disabled}
+                onClick={() => { if (s.onSelect) s.onSelect(); else setActive(s.id) }}
+                className="flex items-center gap-1.5 h-9 px-3 rounded-full text-xs flex-shrink-0 disabled:opacity-40 disabled:cursor-default"
+                style={{ background: isActive ? 'rgba(255,255,255,0.22)' : 'transparent', fontWeight: isActive ? 600 : 400 }}>
+                <span className="flex justify-center flex-shrink-0">{s.icon}</span>
+                <span className="whitespace-nowrap">{s.label}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex-1 min-w-0 overflow-auto">
+          {cur?.content}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full w-full" style={{ background: theme.bg, color: theme.text }} data-module="office">
       {/* Rail gauche (couleur d'onglet Fichier, dérivée de l'accent du module) */}
-      <div className="flex flex-col w-60 flex-shrink-0 py-2 overflow-y-auto" style={{ background: fileAccentFor(theme.accent), color: '#fff' }}>
+      <div className="flex flex-col w-60 flex-shrink-0 py-2 overflow-y-auto" style={{ background: `var(--kbn-office-file-accent, ${fileAccentFor(theme.accent)})`, color: 'var(--kbn-office-file-accent-text, #fff)' }}>
         {/* Flèche de retour retirée (la bande d'onglets reste visible → on sort en
             cliquant un autre onglet) ; on CONSERVE l'espace vertical qu'elle créait. */}
         <div className="h-10 mb-2 flex-shrink-0" aria-hidden />
@@ -54,7 +86,7 @@ export function Backstage({ sections, theme, onBack, locked = false, initial }: 
               {s.separated && <div className="my-1.5 mx-5 border-t" style={{ borderColor: 'rgba(255,255,255,0.2)' }} />}
               <button disabled={s.disabled}
                 onClick={() => { if (s.onSelect) s.onSelect(); else setActive(s.id) }}
-                className="flex items-center gap-3 w-full px-5 h-9 text-[13px] text-left disabled:opacity-40 disabled:cursor-default"
+                className="flex items-center gap-3 w-full px-5 h-9 text-xs text-left disabled:opacity-40 disabled:cursor-default"
                 style={{ background: isActive ? 'rgba(255,255,255,0.18)' : 'transparent', fontWeight: isActive ? 600 : 400 }}
                 onMouseEnter={e => { if (!isActive && !s.disabled) e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
                 onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}>
