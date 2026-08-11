@@ -1,6 +1,13 @@
 import { registerModuleTranslations } from '@kubuno/sdk'
 
 const en = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "Paste",
+  common_cut: "Cut",
+  common_copy: "Copy",
+  common_clip_history: "History",
+  common_clip_history_tip: "Clipboard history (all modules)",
+  doc_grp_clipboard: "Clipboard",
   ctx_add_point: "Add a point",
   ctx_remove_point: "Remove the point",
   test_result: "Result",
@@ -144,6 +151,13 @@ const en = {
 }
 
 const fr = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "Coller",
+  common_cut: "Couper",
+  common_copy: "Copier",
+  common_clip_history: "Historique",
+  common_clip_history_tip: "Historique du presse-papiers (tous les modules)",
+  doc_grp_clipboard: "Presse-papiers",
   ctx_add_point: "Ajouter un point",
   ctx_remove_point: "Retirer le point",
   test_result: "Résultat",
@@ -281,6 +295,13 @@ const fr = {
 }
 
 const es = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "Pegar",
+  common_cut: "Cortar",
+  common_copy: "Copiar",
+  common_clip_history: "Historial",
+  common_clip_history_tip: "Historial del portapapeles (todos los módulos)",
+  doc_grp_clipboard: "Portapapeles",
   ctx_add_point: "Añadir un punto",
   ctx_remove_point: "Quitar el punto",
   test_result: "Resultado",
@@ -360,6 +381,13 @@ const es = {
 }
 
 const pt = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "Colar",
+  common_cut: "Recortar",
+  common_copy: "Copiar",
+  common_clip_history: "Histórico",
+  common_clip_history_tip: "Histórico da área de transferência (todos os módulos)",
+  doc_grp_clipboard: "Área de Transferência",
   ctx_add_point: "Adicionar um ponto",
   ctx_remove_point: "Remover o ponto",
   test_result: "Resultado",
@@ -439,6 +467,13 @@ const pt = {
 }
 
 const it = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "Incolla",
+  common_cut: "Taglia",
+  common_copy: "Copia",
+  common_clip_history: "Cronologia",
+  common_clip_history_tip: "Cronologia degli Appunti (tutti i moduli)",
+  doc_grp_clipboard: "Appunti",
   ctx_add_point: "Aggiungi un punto",
   ctx_remove_point: "Rimuovi il punto",
   test_result: "Risultato",
@@ -518,6 +553,13 @@ const it = {
 }
 
 const de = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "Einfügen",
+  common_cut: "Ausschneiden",
+  common_copy: "Kopieren",
+  common_clip_history: "Verlauf",
+  common_clip_history_tip: "Zwischenablageverlauf (alle Module)",
+  doc_grp_clipboard: "Zwischenablage",
   ctx_add_point: "Punkt hinzufügen",
   ctx_remove_point: "Punkt entfernen",
   test_result: "Ergebnis",
@@ -597,6 +639,13 @@ const de = {
 }
 
 const el = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "Επικόλληση",
+  common_cut: "Αποκοπή",
+  common_copy: "Αντιγραφή",
+  common_clip_history: "Ιστορικό",
+  common_clip_history_tip: "Ιστορικό προχείρου (όλες οι μονάδες)",
+  doc_grp_clipboard: "Πρόχειρο",
   ctx_add_point: "Προσθήκη σημείου",
   ctx_remove_point: "Αφαίρεση σημείου",
   test_result: "Αποτέλεσμα",
@@ -676,6 +725,13 @@ const el = {
 }
 
 const ru = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "Вставить",
+  common_cut: "Вырезать",
+  common_copy: "Копировать",
+  common_clip_history: "Журнал",
+  common_clip_history_tip: "Журнал буфера обмена (все модули)",
+  doc_grp_clipboard: "Буфер обмена",
   ctx_add_point: "Добавить точку",
   ctx_remove_point: "Удалить точку",
   test_result: "Результат",
@@ -755,6 +811,13 @@ const ru = {
 }
 
 const ar = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "لصق",
+  common_cut: "قص",
+  common_copy: "نسخ",
+  common_clip_history: "المحفوظات",
+  common_clip_history_tip: "محفوظات الحافظة (جميع الوحدات)",
+  doc_grp_clipboard: "الحافظة",
   ctx_add_point: "إضافة نقطة",
   ctx_remove_point: "إزالة النقطة",
   test_result: "النتيجة",
@@ -834,6 +897,13 @@ const ar = {
 }
 
 const he = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "הדבקה",
+  common_cut: "גזירה",
+  common_copy: "העתקה",
+  common_clip_history: "היסטוריה",
+  common_clip_history_tip: "היסטוריית לוח הגזירים (כל המודולים)",
+  doc_grp_clipboard: "לוח הגזירים",
   ctx_add_point: "הוספת נקודה",
   ctx_remove_point: "הסרת הנקודה",
   test_result: "תוצאה",
@@ -913,6 +983,13 @@ const he = {
 }
 
 const hi = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "चिपकाएँ",
+  common_cut: "काटें",
+  common_copy: "कॉपी करें",
+  common_clip_history: "इतिहास",
+  common_clip_history_tip: "क्लिपबोर्ड इतिहास (सभी मॉड्यूल)",
+  doc_grp_clipboard: "क्लिपबोर्ड",
   ctx_add_point: "एक बिंदु जोड़ें",
   ctx_remove_point: "बिंदु हटाएं",
   test_result: "परिणाम",
@@ -992,6 +1069,13 @@ const hi = {
 }
 
 const zh = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "粘贴",
+  common_cut: "剪切",
+  common_copy: "复制",
+  common_clip_history: "历史记录",
+  common_clip_history_tip: "剪贴板历史记录（所有模块）",
+  doc_grp_clipboard: "剪贴板",
   ctx_add_point: "添加点",
   ctx_remove_point: "移除点",
   test_result: "结果",
@@ -1071,6 +1155,13 @@ const zh = {
 }
 
 const ja = {
+  // Clipboard ribbon group (shared across ribbon modules)
+  common_paste: "貼り付け",
+  common_cut: "切り取り",
+  common_copy: "コピー",
+  common_clip_history: "履歴",
+  common_clip_history_tip: "クリップボードの履歴（すべてのモジュール）",
+  doc_grp_clipboard: "クリップボード",
   ctx_add_point: "ポイントを追加",
   ctx_remove_point: "ポイントを削除",
   test_result: "結果",

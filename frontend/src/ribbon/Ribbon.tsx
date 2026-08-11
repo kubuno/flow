@@ -342,7 +342,7 @@ function RibbonGroupsRow({ groups, theme, height }: { groups: RibbonGroup[]; the
 
   return (
     // overflow-hidden : plus de barre de défilement — on replie au lieu de défiler.
-    <div ref={rowRef} className="flex items-stretch px-2 overflow-hidden" style={{ height, background: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+    <div ref={rowRef} className="flex items-stretch px-2 overflow-hidden" style={{ height, background: theme.bg, borderBottom: `1px solid ${theme.border}`, fontSize: 11 }}>
       {groups.map((g, i) => {
         const last = i === n - 1
         const setEl = (map: { current: Map<string, HTMLDivElement> }) => (el: HTMLDivElement | null) => { if (el) map.current.set(g.id, el); else map.current.delete(g.id) }
@@ -428,7 +428,7 @@ function CollapsedGroupView({ group, theme, last }: { group: RibbonGroup; theme:
           style={{ position: 'fixed', top: (box ?? anchor).top, left: (box ?? anchor).left, zIndex: 50,
             visibility: box ? 'visible' : 'hidden',
             maxWidth: 'calc(100vw - 16px)', overflowX: 'auto',
-            background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', padding: 4 }}>
+            background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', padding: 4, fontSize: 11 }}>
           <RibbonGroupView group={group} theme={theme} last />
         </div>,
         document.body,
@@ -443,7 +443,7 @@ function RibbonGroupView({ group, theme, last }: { group: RibbonGroup; theme: Wo
       style={{ borderRight: last ? undefined : `1px solid ${theme.border}` }}>
       <div className="flex items-stretch gap-0.5 flex-1">
         {toColumns(group.items).map((col, ci) => (
-          <div key={ci} className="flex flex-col justify-center gap-[1px]">
+          <div key={ci} className="flex flex-col justify-start gap-[1px]">
             {col.map(it => <RibbonItemView key={it.id} item={it} theme={theme} />)}
           </div>
         ))}
@@ -453,23 +453,69 @@ function RibbonGroupView({ group, theme, last }: { group: RibbonGroup; theme: Wo
   )
 }
 
-// RÈGLE : un petit bouton ne peut JAMAIS être sur plus de 3 lignes — on empile les
-// petits items consécutifs en colonnes de 3 MAX (au-delà, nouvelle colonne), façon
-// Office. Tout le reste (gros bouton, dropdown, gallery, custom, séparateur) forme sa
-// propre colonne. Le budget vertical (CONTENT_H 84 − padding − libellé) impose des
-// petits boutons de 20px et des interlignes d'1px pour caser les 3 lignes.
+// RÈGLE : un item d'1 position (petit bouton / toggle / split à icône) ne peut jamais
+// être sur plus de 3 lignes — on EMPILE ces items en colonnes de 3 MAX, façon Office,
+// pour ne PAS gaspiller d'espace horizontal. ⚠️ Un SÉPARATEUR n'interrompt PAS
+// l'empilement (sinon il isolerait des colonnes partielles) : il est ignoré au packing.
+// Seuls les composants « larges » (gros bouton `size:'large'`, dropdown, gallery, menu,
+// custom) forment leur propre colonne.
 const MAX_STACK = 3
 function toColumns(items: RibbonItem[]): RibbonItem[][] {
   const cols: RibbonItem[][] = []
   let run: RibbonItem[] = []
   const flush = () => { if (run.length) { cols.push(run); run = [] } }
   for (const it of items) {
-    const small = (it.kind === 'button' || it.kind === 'toggle') && (it.size ?? 'small') === 'small'
-    if (small) { run.push(it); if (run.length === MAX_STACK) flush() }
+    if (it.kind === 'separator') continue   // n'interrompt pas l'empilement
+    const stackable = (it.kind === 'button' || it.kind === 'toggle' || it.kind === 'split') && (it.size ?? 'small') !== 'large'
+    if (stackable) { run.push(it); if (run.length === MAX_STACK) flush() }
     else { flush(); cols.push([it]) }
   }
   flush()
   return cols
+}
+
+// Contenu d'un GROS bouton (3 positions verticales), façon Office :
+//  · icône EN HAUT, plus grande que les petits boutons (24 vs 16) ; occupe la 1ʳᵉ position.
+//  · libellé sur 2 lignes MAX, ces 2 lignes TOUJOURS réservées (positions 2 & 3) — hauteur
+//    constante quel que soit le libellé.
+//  · bouton à MENU (`chevron`) : le chevron va SUR la 2e ligne si le libellé tient sur 1
+//    ligne, ou À LA FIN de la 2e ligne si le libellé tient sur 2 lignes (mesuré à l'exécution).
+//    Pour un `split`, `chevronOnClick` rend le chevron cliquable (ouvre le menu) sans quitter
+//    l'action principale du bouton — via un <span> pour ne pas imbriquer deux <button>.
+function LargeButtonContent({ icon, label, chevron, chevronOnClick }: {
+  icon?: ReactNode
+  label?: string
+  chevron: boolean
+  chevronOnClick?: () => void
+}) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [twoLines, setTwoLines] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) { setTwoLines(false); return }
+    const lh = parseFloat(getComputedStyle(el).lineHeight) || 13
+    setTwoLines(el.scrollHeight > lh * 1.6)
+  }, [label])
+  const chev = (
+    <ChevronDown size={11}
+      onClick={chevronOnClick ? (e => { e.stopPropagation(); e.preventDefault(); chevronOnClick() }) : undefined}
+      onMouseDown={chevronOnClick ? (e => e.preventDefault()) : undefined}
+      className={`inline align-middle ${chevronOnClick ? 'cursor-pointer' : ''}`} />
+  )
+  return (
+    <>
+      {/* Icône : occupe l'espace du haut (1ʳᵉ position), forcée à 24px (> 16 des petits). */}
+      <span className="flex-1 flex items-center justify-center min-h-0">
+        <span className="flex items-center justify-center [&>svg]:w-6 [&>svg]:h-6">{icon}</span>
+      </span>
+      {/* Libellé : 2 lignes TOUJOURS réservées (positions 2 & 3). BLOCK (div) pour que
+          `text-center` et le chevron-sur-2e-ligne fonctionnent. */}
+      <div className="text-center text-[11px] leading-tight break-words" style={{ height: '2.4em', maxWidth: '4.6rem', margin: '0 auto', overflow: 'hidden' }}>
+        <span ref={ref} className="line-clamp-2">{label}{chevron && twoLines ? <>{' '}{chev}</> : null}</span>
+        {chevron && !twoLines ? <div className="leading-none">{chev}</div> : null}
+      </div>
+    </>
+  )
 }
 
 function RibbonItemView({ item, theme }: { item: RibbonItem; theme: WorkspaceTheme }) {
@@ -481,8 +527,9 @@ function RibbonItemView({ item, theme }: { item: RibbonItem; theme: WorkspaceThe
   if (item.kind === 'custom') return <>{item.render}</>
 
   if (item.kind === 'dropdown') {
+    // Dropdowns du ruban : compacts et à 11px (le défaut @ui = 14px/36px, trop gros ici).
     return <Dropdown value={item.value ?? ''} onChange={v => item.onChange?.(v)}
-      options={item.options ?? []} width={item.width ?? 120} />
+      options={item.options ?? []} width={item.width ?? 120} fontSize={11} height={24} />
   }
 
   if (item.kind === 'gallery') {
@@ -518,14 +565,21 @@ function RibbonItemView({ item, theme }: { item: RibbonItem; theme: WorkspaceThe
     <button ref={btnRef} title={tip} disabled={item.disabled}
       onMouseDown={e => e.preventDefault()}
       onClick={() => { if ((item.kind === 'split' || item.kind === 'menu') && !item.onClick) openSplit(); else item.onClick?.() }}
-      className={`flex ${large ? 'flex-col w-14 h-full items-center justify-center gap-1' : 'flex-row items-center h-[20px] px-1.5 gap-1'} rounded-xs disabled:opacity-40`}
+      className={`flex ${large ? 'flex-col h-full items-center px-2 py-0.5 min-w-[3.5rem] max-w-[200px]' : 'flex-row items-center h-[20px] px-1.5 gap-1'} rounded-xs disabled:opacity-40`}
       style={{ background: activeBg, color: activeFg }}
       onMouseEnter={e => { if (!item.active) e.currentTarget.style.background = theme.dark ? 'rgba(255,255,255,0.08)' : 'var(--kbn-ws-hover, #f1f3f4)' }}
       onMouseLeave={e => { if (!item.active) e.currentTarget.style.background = 'transparent' }}>
-      <span className="flex items-center justify-center" style={{ width: large ? 22 : 16, height: large ? 22 : 16 }}>{item.icon}</span>
-      {(large || item.label) && <span className={large ? 'text-[10px] leading-tight text-center' : 'text-[11px] whitespace-nowrap'}>{item.label}</span>}
-      {/* Chevron SOUS le libellé (gros bouton à menu, façon Word). */}
-      {item.kind === 'menu' && <ChevronDown size={11} style={{ color: theme.textDim, marginTop: large ? -2 : 0 }} />}
+      {large ? (
+        <LargeButtonContent icon={item.icon} label={item.label}
+          chevron={item.kind === 'menu' || item.kind === 'split'}
+          chevronOnClick={item.kind === 'split' ? openSplit : undefined} />
+      ) : (
+        <>
+          <span className="flex items-center justify-center flex-shrink-0" style={{ width: 16, height: 16 }}>{item.icon}</span>
+          {item.label && <span className="text-[11px] whitespace-nowrap">{item.label}</span>}
+          {item.kind === 'menu' && <ChevronDown size={11} style={{ color: theme.textDim }} />}
+        </>
+      )}
     </button>
   )
 
@@ -533,7 +587,11 @@ function RibbonItemView({ item, theme }: { item: RibbonItem; theme: WorkspaceThe
   // sinon liste d'actions (`splitItems`).
   if (item.kind === 'menu') {
     return (
-      <span className="flex items-center">
+      // ⚠️ `h-full` quand large : sinon le `h-full` du bouton se résout à la hauteur
+      // NATURELLE du contenu (l'enveloppe n'est pas étirée) → gros bouton menu plus court
+      // qu'un gros bouton simple. Avec `h-full` l'enveloppe remplit la colonne → hauteur
+      // identique pour TOUS les gros boutons (3 positions consommées).
+      <span className={`flex items-center ${large ? 'h-full' : ''}`}>
         {core}
         {menu && (
           <MenuDropdown
@@ -551,12 +609,16 @@ function RibbonItemView({ item, theme }: { item: RibbonItem; theme: WorkspaceThe
 
   if (item.kind === 'split') {
     return (
-      <span className="flex items-center">
+      <span className={`flex items-center ${large ? 'h-full' : ''}`}>
         {core}
-        <button title={tip} onMouseDown={e => e.preventDefault()} onClick={openSplit}
-          className="flex items-center justify-center w-4 h-[20px] rounded-xs hover:bg-black/5" style={{ color: theme.textDim }}>
-          <ChevronDown size={11} />
-        </button>
+        {/* GROS split : le chevron est DANS le bouton (cf. LargeButtonContent). Petit
+            split : chevron séparé à droite. */}
+        {!large && (
+          <button title={tip} onMouseDown={e => e.preventDefault()} onClick={openSplit}
+            className="flex items-center justify-center w-4 h-[20px] rounded-xs hover:bg-black/5" style={{ color: theme.textDim }}>
+            <ChevronDown size={11} />
+          </button>
+        )}
         {menu && (
           <MenuDropdown
             items={item.menuRender ? [{ type: 'custom', render: close => item.menuRender!(close) }] : (item.splitItems ?? []).map<MenuItem>(si => ({

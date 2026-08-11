@@ -4,17 +4,59 @@
 // actions, statut, rail, bottom/status bar, corps…) et rend le ruban dans le slot
 // `menuBar` du shell (donc `menuBar`/`menus`/`optionsBar` ne sont PAS exposés ici :
 // le ruban les remplace). Chaque sous-éditeur fournit sa config `ribbon: RibbonTab[]`.
-import { useCallback, useEffect, useState, type ComponentProps } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Trash2, Maximize2, Minimize2 } from 'lucide-react'
 import { WorkspaceShell, WORKSPACE_OFFICE, useSidebarStore, useConfirm } from '@kubuno/sdk'
 import { useIsMobile, ConfirmDialog } from '@ui'
 import { Ribbon, RibbonTabStrip } from '../ribbon/Ribbon'
-import type { RibbonTab } from '../ribbon/types'
+import type { RibbonTab, RibbonGroup, RibbonItem } from '../ribbon/types'
 
 // Réduction du ruban (façon MS Office) — PRÉFIXE de clé localStorage : la clé réelle est
 // suffixée par le sous-module (cf. `ribbonKey`) → persistance PAR sous-module. Défaut = déplié.
 const RIBBON_COLLAPSED_KEY = 'kubuno.ribbon.collapsed'
+
+// Garantit, pour TOUT ruban, un onglet « Affichage » (id `view`) contenant un groupe
+// « Afficher » (id `show`) avec un bouton « Plein écran » (id `fullscreen`) qui bascule
+// le plein écran (Fullscreen API, façon F11). Si l'onglet/groupe existent déjà, on ne
+// fait qu'y AJOUTER le bouton (sans doublon) ; sinon on les crée. Ruban vide (mode
+// lecture) → inchangé.
+function ensureFullscreenView(
+  tabs: RibbonTab[],
+  labels: { view: string; show: string; full: string },
+  isFullscreen: boolean,
+  toggle: () => void,
+): RibbonTab[] {
+  if (!tabs.length) return tabs
+  const fsBtn: RibbonItem = {
+    id: 'fullscreen', kind: 'toggle', size: 'large',
+    icon: isFullscreen ? <Minimize2 size={22} /> : <Maximize2 size={22} />,
+    // `shortcut` ajoute déjà « · F11 » à l'infobulle → tooltip = juste le libellé.
+    label: labels.full, tooltip: labels.full, shortcut: 'F11',
+    active: isFullscreen, onClick: toggle,
+  }
+  const isView = (tb: RibbonTab) => tb.backstage == null && (tb.id === 'view' || /^affichage$/i.test(tb.label.trim()))
+  const isShow = (g: RibbonGroup) => g.id === 'show' || /^afficher$/i.test(g.label.trim())
+  const addToShow = (groups: RibbonGroup[]): RibbonGroup[] => {
+    const gi = groups.findIndex(isShow)
+    if (gi >= 0) {
+      if (groups[gi].items.some(it => it.id === 'fullscreen')) return groups
+      const ng = groups.slice(); ng[gi] = { ...ng[gi], items: [...ng[gi].items, fsBtn] }; return ng
+    }
+    return [{ id: 'show', label: labels.show, items: [fsBtn] }, ...groups]
+  }
+  const vi = tabs.findIndex(isView)
+  if (vi >= 0) {
+    const nt = tabs.slice(); nt[vi] = { ...nt[vi], groups: addToShow(nt[vi].groups) }; return nt
+  }
+  // Aucun onglet Affichage → on le crée (avant les onglets contextuels, s'il y en a).
+  const newTab: RibbonTab = { id: 'view', label: labels.view, groups: [{ id: 'show', label: labels.show, items: [fsBtn] }] }
+  const ci = tabs.findIndex(tb => tb.contextual)
+  const nt = tabs.slice()
+  if (ci >= 0) nt.splice(ci, 0, newTab); else nt.push(newTab)
+  return nt
+}
 
 type ShellProps = ComponentProps<typeof WorkspaceShell>
 // On retire les slots remplacés par le ruban. `hideHeaderActions` est déclaré ici
@@ -38,6 +80,24 @@ export function OfficeShell({ ribbon, activeTabId, onTabChange, hideHeaderAction
   const [ownTab, setOwnTab] = useState(() => ribbon.find(t => t.visible !== false)?.id ?? '')
   const activeTab = activeTabId ?? ownTab
   const changeTab = useCallback((id: string) => { onTabChange?.(id); if (activeTabId === undefined) setOwnTab(id) }, [onTabChange, activeTabId])
+
+  // ── Plein écran (F11) — bouton garanti dans Affichage → Afficher de TOUT ruban ──
+  const { t } = useTranslation()
+  const [isFullscreen, setIsFullscreen] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement)
+  useEffect(() => {
+    const on = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', on)
+    return () => document.removeEventListener('fullscreenchange', on)
+  }, [])
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) document.exitFullscreen?.()
+    else document.documentElement.requestFullscreen?.()
+  }, [])
+  const nribbon = useMemo(() => ensureFullscreenView(ribbon, {
+    view: t('office_tab_view',          { defaultValue: 'Affichage' }),
+    show: t('office_grp_show',          { defaultValue: 'Afficher' }),
+    full: t('office_ribbon_fullscreen', { defaultValue: 'Plein écran' }),
+  }, isFullscreen, toggleFullscreen), [ribbon, isFullscreen, t, toggleFullscreen])
 
   // ── Réduction du ruban + « peek » (façon MS Office) ─────────────────────────────
   // `collapsed` : ruban replié. `peekOpen` : quand replié, un onglet a été cliqué → son
@@ -66,7 +126,7 @@ export function OfficeShell({ ribbon, activeTabId, onTabChange, hideHeaderAction
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('storage', onStorage) }
   }, [toggleCollapsed, isMobile, ribbonKey])
 
-  const fileTabId = ribbon.find(t => t.backstage != null)?.id
+  const fileTabId = nribbon.find(t => t.backstage != null)?.id
   const backstageOpen = activeTab === fileTabId && fileTabId != null
   // Réduit + onglet en survol + PAS le backstage → flyout de peek.
   const peeking = !isMobile && collapsed && peekOpen && !backstageOpen
@@ -131,7 +191,7 @@ export function OfficeShell({ ribbon, activeTabId, onTabChange, hideHeaderAction
     // blanche, se raccorde à la rangée de groupes en dessous).
     forwarded.titleSlot = (
       <RibbonTabStrip
-        tabs={ribbon} theme={theme} activeId={stripActive} onSelect={handleTab}
+        tabs={nribbon} theme={theme} activeId={stripActive} onSelect={handleTab}
         tabStripActions={ribbonActions} inTopbar height={(rest as ShellProps).topbarHeight ?? 40}
         collapsed={collapsed} onToggleCollapsed={toggleCollapsed}
       />
@@ -158,7 +218,7 @@ export function OfficeShell({ ribbon, activeTabId, onTabChange, hideHeaderAction
       {...({ hideHeaderActions } as Partial<ShellProps>)}
       theme={theme}
       onBack={isMobile ? onBack : undefined}
-      menuBar={<Ribbon tabs={ribbon} theme={theme} activeTabId={activeTab} onTabChange={changeTab}
+      menuBar={<Ribbon tabs={nribbon} theme={theme} activeTabId={activeTab} onTabChange={changeTab}
                        hideTabs={!isMobile}
                        collapsed={!isMobile && collapsed} peeking={peeking} onClosePeek={closePeek} />}
     />

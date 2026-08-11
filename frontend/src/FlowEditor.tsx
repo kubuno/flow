@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import { useDebouncedAutosave, prompt, useAuthStore } from '@kubuno/sdk'
-import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, Undo2, Redo2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy, Star, ClipboardPaste, Scissors, PenLine, Eye, X } from 'lucide-react'
+import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy, Star, PenLine, Eye, X } from 'lucide-react'
 import { useIsMobile, useSaveShortcut } from '@ui'
 import { flowApi, streamExecution } from './api'
 import type { CredentialMeta, ExprHelp, NodeLog, NodeMeta, StickyNote, Workflow, WorkflowDefinition, WorkflowEdge, WorkflowNode } from './types'
@@ -20,6 +20,8 @@ import { OfficeShell } from './shell/OfficeShell'
 import { THEME_FLOW } from './ribbon/officeThemes'
 import { useFileTab, backstageLabels, BackstageInfo } from './ribbon/ModuleBackstage'
 import { SaveButton } from './ribbon/SaveButton'
+import { UndoRedoButtons } from './ribbon/UndoRedoButtons'
+import { clipboardGroup } from './ribbon/clipboardGroup'
 import type { RibbonTab } from './ribbon/types'
 
 function uid(prefix: string): string {
@@ -425,24 +427,24 @@ export default function FlowEditor() {
   // also adds notes via double-click, but the ribbon needs an explicit button).
   const addNoteAtOrigin = useCallback(() => addNote(160 + notes.length * 30, 160 + notes.length * 24), [addNote, notes.length])
 
-  // ── Ruban façon MS Office (data-driven) — remplace la barre de menus + toolbar.
-  // Onglet Accueil : Workflow (Nouveau/Dupliquer, ex-menuActions) + Édition
-  // (Annuler/Refaire/Supprimer) + Exécution (Tester/Activer/Historique) +
-  // Identifiants. Onglet Insertion : ajout de nœud + note. Onglet Affichage :
-  // bascule de l'historique. Aucune action de l'ancienne toolbar n'est perdue.
+  // ── MS Office-like ribbon (data-driven) — replaces the menu bar + toolbar.
+  // Home tab: Clipboard (always first) + Workflow (New/Duplicate, former
+  // menuActions) + Editing (Delete) + Execution (Test/Activate/History) +
+  // Credentials. Insert tab: add node + note. View tab: history toggle. No action
+  // of the former toolbar is lost — Undo/Redo moved to the tab strip.
   const ribbon: RibbonTab[] = [
     {
       id: 'home', label: t('office_bs_home', { defaultValue: 'Accueil' }),
       groups: [
-        {
-          // Presse-papiers (façon Word) : coller/couper/copier le nœud sélectionné.
-          id: 'clip', label: t('rb_group_clipboard', { defaultValue: 'Presse-papiers' }),
-          items: [
-            { id: 'paste', kind: 'button', size: 'large', icon: <ClipboardPaste size={18} />, label: t('paste', { defaultValue: 'Coller' }), shortcut: 'Ctrl+V', onClick: paste, disabled: !hasClipboard },
-            { id: 'cut', kind: 'button', icon: <Scissors size={15} />, label: t('cut', { defaultValue: 'Couper' }), shortcut: 'Ctrl+X', onClick: () => { const ids = [...selectedIds]; if (ids.length === 1) { copyNode(ids[0]); deleteSelected() } }, disabled: selectedIds.size !== 1 },
-            { id: 'copy', kind: 'button', icon: <Copy size={15} />, label: t('copy', { defaultValue: 'Copier' }), shortcut: 'Ctrl+C', onClick: () => { const ids = [...selectedIds]; if (ids.length === 1) copyNode(ids[0]) }, disabled: selectedIds.size !== 1 },
-          ],
-        },
+        // Clipboard (shared helper) — ALWAYS the first group of the Home tab: it
+        // pastes/cuts/copies the selected node. Undo/Redo are NOT in the ribbon,
+        // they live in the tab strip (`UndoRedoButtons`, see `titleActions`).
+        clipboardGroup({
+          t,
+          onPaste: paste, pasteDisabled: !hasClipboard,
+          onCut: () => { const ids = [...selectedIds]; if (ids.length === 1) { copyNode(ids[0]); deleteSelected() } }, cutDisabled: selectedIds.size !== 1,
+          onCopy: () => { const ids = [...selectedIds]; if (ids.length === 1) copyNode(ids[0]) }, copyDisabled: selectedIds.size !== 1,
+        }),
         {
           id: 'workflow', label: t('rb_group_workflow', { defaultValue: 'Workflow' }),
           items: [
@@ -453,9 +455,6 @@ export default function FlowEditor() {
         {
           id: 'edit', label: t('rb_group_edit', { defaultValue: 'Édition' }),
           items: [
-            { id: 'undo', kind: 'button', icon: <Undo2 size={15} />, label: t('undo', { defaultValue: 'Annuler' }), shortcut: 'Ctrl+Z', onClick: undo, disabled: !undoMgr.canUndo() },
-            { id: 'redo', kind: 'button', icon: <Redo2 size={15} />, label: t('redo', { defaultValue: 'Refaire' }), shortcut: 'Ctrl+Maj+Z', onClick: redo, disabled: !undoMgr.canRedo() },
-            { id: 'sep1', kind: 'separator' },
             { id: 'del', kind: 'button', icon: <Trash2 size={15} />, label: t('delete', { defaultValue: 'Supprimer' }), onClick: deleteSelected, disabled: selectedIds.size === 0 },
           ],
         },
@@ -550,6 +549,17 @@ export default function FlowEditor() {
   // Bouton Enregistrer placé près du titre (juste avant la corbeille) via `titleActions`.
   const saveButton = <SaveButton onSave={save} saving={saving} dirty={dirty} label={t('save')} />
 
+  // Annuler / Rétablir : dans la bande d'onglets (au-dessus du ruban), comme dans
+  // tous les éditeurs à ruban de Kubuno — jamais dans un groupe du ruban.
+  const undoRedoButtons = (
+    <UndoRedoButtons
+      onUndo={undo} onRedo={redo} canUndo={undoMgr.canUndo()} canRedo={undoMgr.canRedo()}
+      // `undo`/`redo` already carry their shortcut — do not append it twice.
+      undoLabel={t('undo', { defaultValue: 'Annuler (Ctrl+Z)' })}
+      redoLabel={t('redo', { defaultValue: 'Refaire (Ctrl+Maj+Z)' })}
+    />
+  )
+
   // Bouton Favori (étoile) placé après Enregistrer (ordre : Enregistrer, ⭐, puis 🗑).
   const starButton = wf ? (
     <button onClick={() => starMut(!wf.is_starred)}
@@ -597,7 +607,7 @@ export default function FlowEditor() {
             <Eye size={16} />
           </button>
         )}
-        {!readMobile && <>{saveButton}{starButton}</>}
+        {!readMobile && <>{saveButton}{undoRedoButtons}{starButton}</>}
       </>}
       onDelete={handleDelete}
       deleteTitle={t('delete_workflow')}
