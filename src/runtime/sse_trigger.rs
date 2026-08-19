@@ -66,6 +66,15 @@ async fn manager(state: AppState) {
 }
 
 async fn stream_sse(state: &AppState, wf_id: Uuid, owner: Uuid, url: &str, headers: &Value) {
+    // The URL comes straight from the workflow definition, so this background
+    // connection is exactly the SSRF vector the HTTP node is protected against.
+    // It used to build its own client and dial whatever it was given; it now
+    // goes through the same verdict: unconditional anti-SSRF guard, then the
+    // administrator's host lists.
+    if let Err(e) = state.proxy.check_egress(url).await {
+        tracing::warn!(workflow = %wf_id, error = %e, "SSE : connexion sortante refusée");
+        return;
+    }
     let client = match reqwest::Client::builder().build() {
         Ok(c) => c,
         Err(_) => return,
@@ -99,7 +108,7 @@ async fn stream_sse(state: &AppState, wf_id: Uuid, owner: Uuid, url: &str, heade
                     let raw = data_lines.join("\n");
                     let parsed: Value = serde_json::from_str(&raw).unwrap_or(Value::String(raw));
                     let trigger_data = json!({ "event": event_name.clone(), "data": parsed });
-                    let _ = queue::enqueue(&state.db, wf_id, owner, "sse", trigger_data, state.settings.runtime.max_retries).await;
+                    let _ = queue::enqueue(&state.db, wf_id, owner, "sse", trigger_data, state.instance().max_retries).await;
                     data_lines.clear();
                     event_name = None;
                 }

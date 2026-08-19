@@ -1,7 +1,9 @@
 pub mod core_proxy;
+pub mod egress;
 pub mod email_trigger;
 pub mod executor;
 pub mod expr;
+pub mod net_guard;
 pub mod queue;
 pub mod resolver;
 pub mod retry;

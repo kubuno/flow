@@ -3,6 +3,7 @@
 //! after activation. Per-trigger state (`flow.email_trigger_state`) avoids
 //! re-firing and avoids mutating the mailbox.
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use mail_parser::MessageParser;
@@ -102,17 +103,17 @@ async fn poll_one(state: &AppState, wf_id: Uuid, owner: Uuid, node: &WorkflowNod
         let seen: Vec<String> = prev.as_ref().and_then(|s| s.get("seen")).and_then(|v| v.as_array())
             .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
         let first = prev.is_none();
-        let (msgs, new_seen) = pop3_poll(&cfg, &seen, first).await?;
+        let (msgs, new_seen) = pop3_poll(state, &cfg, &seen, first).await?;
         (msgs, json!({ "seen": new_seen }))
     } else {
         let last_uid: Option<u32> = prev.as_ref().and_then(|s| s.get("last_uid")).and_then(|v| v.as_u64()).map(|u| u as u32);
-        let (msgs, new_last) = imap_poll(&cfg, last_uid).await?;
+        let (msgs, new_last) = imap_poll(state, &cfg, last_uid).await?;
         (msgs, json!({ "last_uid": new_last }))
     };
 
     for m in messages {
         let trigger_data = json!({ "email": m });
-        let _ = queue::enqueue(&state.db, wf_id, owner, "email", trigger_data, state.settings.runtime.max_retries).await;
+        let _ = queue::enqueue(&state.db, wf_id, owner, "email", trigger_data, state.instance().max_retries).await;
     }
 
     sqlx::query(
@@ -146,13 +147,45 @@ fn parse_email(raw: &[u8]) -> Value {
     })
 }
 
+/// Opens the mailbox socket under the egress guard.
+///
+/// The mail host is workflow configuration, so it is exactly as user-supplied as
+/// an HTTP node's URL: unguarded, this loop would happily poll a service bound
+/// on the instance itself. The guard runs first, and the socket is then opened
+/// on the VALIDATED ADDRESS — nothing resolves `cfg.host` a second time, so
+/// there is no DNS-rebinding window here. The name is still passed to the TLS
+/// handshake, where it belongs: the certificate must match it.
+async fn guarded_connect(state: &AppState, cfg: &EmailCfg, proto: &str) -> Result<TcpStream, String> {
+    let ips = state
+        .proxy
+        .check_egress_host(&cfg.host, cfg.port)
+        .await
+        .map_err(|e| {
+            tracing::warn!(host = %cfg.host, error = %e, "Déclencheur e-mail : connexion sortante refusée");
+            format!("{proto} : {e}")
+        })?;
+    // Try each validated address in turn, the way the resolver-driven connect
+    // used to: a dual-stack mailbox may only answer on one of its families.
+    let mut last_err = format!("{proto} : aucune adresse résolue");
+    for ip in ips {
+        match tokio::time::timeout(
+            Duration::from_secs(20),
+            TcpStream::connect(SocketAddr::new(ip, cfg.port)),
+        )
+        .await
+        {
+            Ok(Ok(tcp)) => return Ok(tcp),
+            Ok(Err(e)) => last_err = format!("{proto} TCP : {e}"),
+            Err(_) => last_err = format!("{proto} : délai de connexion"),
+        }
+    }
+    Err(last_err)
+}
+
 // ── IMAP ─────────────────────────────────────────────────────────────────────────
 
-async fn imap_poll(cfg: &EmailCfg, last_uid: Option<u32>) -> Result<(Vec<Value>, u32), String> {
-    let addr = format!("{}:{}", cfg.host, cfg.port);
-    let tcp = tokio::time::timeout(Duration::from_secs(20), TcpStream::connect(&addr)).await
-        .map_err(|_| "IMAP : délai de connexion".to_string())?
-        .map_err(|e| format!("IMAP TCP : {e}"))?;
+async fn imap_poll(state: &AppState, cfg: &EmailCfg, last_uid: Option<u32>) -> Result<(Vec<Value>, u32), String> {
+    let tcp = guarded_connect(state, cfg, "IMAP").await?;
 
     if cfg.secure {
         let native = NativeTlsConnector::new().map_err(|e| format!("TLS : {e}"))?;
@@ -203,11 +236,8 @@ where
 
 // ── POP3 (client minimal) ────────────────────────────────────────────────────────
 
-async fn pop3_poll(cfg: &EmailCfg, seen: &[String], first_run: bool) -> Result<(Vec<Value>, Vec<String>), String> {
-    let addr = format!("{}:{}", cfg.host, cfg.port);
-    let tcp = tokio::time::timeout(Duration::from_secs(20), TcpStream::connect(&addr)).await
-        .map_err(|_| "POP3 : délai de connexion".to_string())?
-        .map_err(|e| format!("POP3 TCP : {e}"))?;
+async fn pop3_poll(state: &AppState, cfg: &EmailCfg, seen: &[String], first_run: bool) -> Result<(Vec<Value>, Vec<String>), String> {
+    let tcp = guarded_connect(state, cfg, "POP3").await?;
     if cfg.secure {
         let native = NativeTlsConnector::new().map_err(|e| format!("TLS : {e}"))?;
         let tls = TlsConnector::from(native).connect(&cfg.host, tcp).await.map_err(|e| format!("TLS : {e}"))?;

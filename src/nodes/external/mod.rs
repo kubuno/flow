@@ -82,7 +82,7 @@ impl crate::nodes::trait_::NodeExecutor for AiNode {
         };
 
         let resp = n.proxy.call_external(&url, Method::POST, headers, Some(body), 120, n.user_id)
-            .await.map_err(|e| NodeError::ProxyError(e.to_string()))?;
+            .await.map_err(NodeError::from)?;
 
         // Extract the assistant text from either response shape.
         let text = if provider == "openai" {
@@ -151,7 +151,7 @@ impl crate::nodes::trait_::NodeExecutor for HttpRequestNode {
         let body = config.get("body").filter(|v| !v.is_null()).cloned();
 
         let resp = n.proxy.call_external(&url, method, headers, body, timeout, n.user_id)
-            .await.map_err(|e| NodeError::ProxyError(e.to_string()))?;
+            .await.map_err(NodeError::from)?;
 
         Ok(NodeOutput::data(json!({
             "status":  resp.status,

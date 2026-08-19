@@ -21,6 +21,8 @@ pub struct Executor {
     pub proxy:        Arc<CoreProxy>,
     pub settings:     Arc<Settings>,
     pub files_client: Arc<crate::files_client::FilesClient>,
+    /// Snapshot of the admin-editable instance settings for this run.
+    pub instance:     crate::config::InstanceConfig,
 }
 
 #[derive(Debug)]
@@ -64,6 +66,7 @@ impl Executor {
             user_id:      owner_id,
             db:           &self.db,
             settings:     &self.settings,
+            instance:     self.instance,
             registry:     &self.registry,
             files_client: &self.files_client,
             depth:        0,
@@ -72,7 +75,7 @@ impl Executor {
         let mut outputs: HashMap<String, Value> = HashMap::new();
         let mut live_edges: HashSet<String> = HashSet::new();
         let mut executed = 0i32;
-        let node_timeout = Duration::from_secs(self.settings.runtime.node_timeout_secs.max(1));
+        let node_timeout = Duration::from_secs(self.instance.node_timeout_secs.max(1));
 
         // Un nœud est-il un sous-nœud fournisseur IA (modèle/mémoire/outil/parser) ?
         let is_provider = |t: &str| self.registry.ai_output(t).is_some();
@@ -388,6 +391,7 @@ pub async fn run_workflow_inline(
         user_id:      owner_id,
         db:           parent.db,
         settings:     parent.settings,
+        instance:     parent.instance,
         registry:     parent.registry,
         files_client: parent.files_client,
         depth:        parent.depth + 1,
@@ -401,7 +405,7 @@ pub async fn run_workflow_inline(
     let mut outputs: HashMap<String, Value> = HashMap::new();
     let mut live_edges: HashSet<String> = HashSet::new();
     let mut last_output = trigger_data.clone();
-    let node_timeout = Duration::from_secs(parent.settings.runtime.node_timeout_secs.max(1));
+    let node_timeout = Duration::from_secs(parent.instance.node_timeout_secs.max(1));
 
     for node_id in &order {
         let Some(node) = by_id.get(node_id.as_str()) else { continue };

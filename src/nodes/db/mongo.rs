@@ -4,6 +4,7 @@
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use mongodb::bson::{to_document, Bson, Document};
+use mongodb::options::{ClientOptions, ServerAddress};
 use mongodb::Client;
 use serde_json::{json, Value};
 
@@ -28,6 +29,40 @@ fn to_doc(v: &Value) -> Result<Document, NodeError> {
 
 fn doc_to_json(d: Document) -> Value {
     Bson::Document(d).into()
+}
+
+/// Builds a client whose every seed host passed the egress guard.
+///
+/// The URI is user-supplied, so it could name the instance's own host. Parsing
+/// it first also expands a `mongodb+srv://` record, which is where the real
+/// hosts hide. Unlike the SQL drivers the hosts are NOT rewritten to their
+/// validated address: the driver re-dials the members a replica set advertises
+/// in its handshake, and TLS certificates are checked against the host name —
+/// substituting an IP would break both. A DNS-rebinding window therefore
+/// remains on this path, the connection itself is not held open by us.
+async fn connect(uri: &str, n: &NodeContext<'_>) -> Result<Client, NodeError> {
+    let options = ClientOptions::parse(uri).await
+        .map_err(|e| NodeError::ServiceError(format!("URI MongoDB : {e}")))?;
+
+    for addr in &options.hosts {
+        match addr {
+            ServerAddress::Tcp { host, port } => {
+                n.proxy
+                    .check_egress_host(host, port.unwrap_or(27017))
+                    .await
+                    .map_err(NodeError::from)?;
+            }
+            // Unix domain socket: never routed, so never checkable — refuse it.
+            _ => {
+                return Err(NodeError::Blocked(
+                    "socket local interdit dans l'URI MongoDB".into(),
+                ))
+            }
+        }
+    }
+
+    Client::with_options(options)
+        .map_err(|e| NodeError::ServiceError(format!("Connexion MongoDB : {e}")))
 }
 
 pub struct MongoNode;
@@ -58,14 +93,13 @@ impl crate::nodes::trait_::NodeExecutor for MongoNode {
         }
     }
 
-    async fn execute(&self, config: Value, ctx: &ExecutionContext, _n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
+    async fn execute(&self, config: Value, ctx: &ExecutionContext, n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
         let uri = uri(&config)?;
         let db_name = config.get("database").and_then(|v| v.as_str()).ok_or(NodeError::MissingField("database"))?;
         let coll_name = config.get("collection").and_then(|v| v.as_str()).ok_or(NodeError::MissingField("collection"))?;
         let op = config.get("operation").and_then(|v| v.as_str()).unwrap_or("find");
 
-        let client = Client::with_uri_str(&uri).await
-            .map_err(|e| NodeError::ServiceError(format!("Connexion MongoDB : {e}")))?;
+        let client = connect(&uri, n).await?;
         let coll = client.database(db_name).collection::<Document>(coll_name);
         let svc = |e: mongodb::error::Error| NodeError::ServiceError(format!("MongoDB : {e}"));
 

@@ -25,6 +25,7 @@ use sqlx::{Connection, PgConnection, Postgres, Row};
 use crate::nodes::trait_::{
     ExecutionContext, FieldDef, FieldType, NodeCategory, NodeContext, NodeError, NodeMeta, NodeOutput,
 };
+use crate::runtime::net_guard::{guard_pg_options, guarded_pg_dsn};
 
 type PgQuery<'q> = sqlx::query::Query<'q, Postgres, PgArguments>;
 
@@ -47,8 +48,14 @@ fn bind_params<'q>(mut q: PgQuery<'q>, params: &[Value]) -> PgQuery<'q> {
 
 /// Open a connection — from a `postgres` credential (host/user/…) if present,
 /// otherwise from the `connection` DSN string.
-async fn open(config: &Value) -> Result<PgConnection, NodeError> {
-    if let Some(cred) = config.get("credential").filter(|v| v.get("host").is_some()) {
+///
+/// The host is entirely user-supplied, so it goes through the egress guard
+/// before a socket is opened: without it a workflow could point this node at
+/// the instance's own database or at any service bound on the host. The guard
+/// also hands back the validated address, which the returned options dial
+/// instead of the name (see `net_guard::guard_pg_options`).
+async fn open(config: &Value, n: &NodeContext<'_>) -> Result<PgConnection, NodeError> {
+    let opts = if let Some(cred) = config.get("credential").filter(|v| v.get("host").is_some()) {
         let s = |k: &str| cred.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
         let port = cred.get("port").and_then(|v| v.as_i64())
             .or_else(|| cred.get("port").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()))
@@ -59,12 +66,14 @@ async fn open(config: &Value) -> Result<PgConnection, NodeError> {
             .ssl_mode(if ssl { PgSslMode::Require } else { PgSslMode::Prefer });
         let db = s("database"); if !db.is_empty() { opts = opts.database(&db); }
         let pass = s("password"); if !pass.is_empty() { opts = opts.password(&pass); }
-        return PgConnection::connect_with(&opts).await
-            .map_err(|e| NodeError::ServiceError(format!("Connexion DB : {e}")));
-    }
-    let dsn = config.get("connection").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
-        .ok_or(NodeError::MissingField("connection"))?;
-    PgConnection::connect(dsn).await
+        guard_pg_options(n.proxy, opts).await.map_err(NodeError::from)?
+    } else {
+        let dsn = config.get("connection").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+            .ok_or(NodeError::MissingField("connection"))?;
+        guarded_pg_dsn(n.proxy, dsn).await.map_err(NodeError::from)?
+    };
+
+    PgConnection::connect_with(&opts).await
         .map_err(|e| NodeError::ServiceError(format!("Connexion DB : {e}")))
 }
 
@@ -102,11 +111,11 @@ impl crate::nodes::trait_::NodeExecutor for PostgresQueryNode {
         }
     }
 
-    async fn execute(&self, config: Value, _ctx: &ExecutionContext, _n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
+    async fn execute(&self, config: Value, _ctx: &ExecutionContext, n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
         let query = config.get("query").and_then(|v| v.as_str()).ok_or(NodeError::MissingField("query"))?;
         let params: Vec<Value> = config.get("params").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
-        let mut conn = open(&config).await?;
+        let mut conn = open(&config, n).await?;
 
         // Première tentative : envelopper dans une CTE pour récupérer les lignes en JSON.
         // Fonctionne pour SELECT/WITH et pour INSERT/UPDATE/DELETE … RETURNING.
@@ -156,7 +165,7 @@ impl crate::nodes::trait_::NodeExecutor for PostgresInsertNode {
         }
     }
 
-    async fn execute(&self, config: Value, ctx: &ExecutionContext, _n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
+    async fn execute(&self, config: Value, ctx: &ExecutionContext, n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
         let table = config.get("table").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
             .ok_or(NodeError::MissingField("table"))?;
 
@@ -196,7 +205,7 @@ impl crate::nodes::trait_::NodeExecutor for PostgresInsertNode {
         );
         let wrapped = format!("WITH __q AS ({inner}) SELECT coalesce(json_agg(__q), '[]'::json)::text AS data FROM __q");
 
-        let mut conn = open(&config).await?;
+        let mut conn = open(&config, n).await?;
         let q = bind_params(sqlx::query(&wrapped), &values);
         let row = q.fetch_one(&mut conn).await
             .map_err(|e| NodeError::ServiceError(format!("SQL : {e}")))?;

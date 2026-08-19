@@ -160,8 +160,6 @@ async fn call_llm(n: &NodeContext<'_>, m: &ModelCfg, system: &str, turns: &[Turn
     }
 }
 
-fn err(e: impl std::fmt::Display) -> NodeError { NodeError::ProxyError(e.to_string()) }
-
 async fn call_anthropic(n: &NodeContext<'_>, m: &ModelCfg, system: &str, turns: &[Turn], tools: &[Value]) -> Result<Reply, NodeError> {
     let mut messages = Vec::new();
     for t in turns {
@@ -188,7 +186,7 @@ async fn call_anthropic(n: &NodeContext<'_>, m: &ModelCfg, system: &str, turns: 
         ("x-api-key".to_string(), m.api_key.clone()),
         ("anthropic-version".to_string(), "2023-06-01".to_string()),
     ]);
-    let resp = n.proxy.call_external("https://api.anthropic.com/v1/messages", Method::POST, headers, Some(body), 120, n.user_id).await.map_err(err)?;
+    let resp = n.proxy.call_external("https://api.anthropic.com/v1/messages", Method::POST, headers, Some(body), 120, n.user_id).await.map_err(NodeError::from)?;
 
     let blocks = resp.body.get("content").and_then(|v| v.as_array()).cloned().unwrap_or_default();
     let calls: Vec<ToolCall> = blocks.iter().filter(|b| b.get("type").and_then(|v| v.as_str()) == Some("tool_use"))
@@ -236,7 +234,7 @@ async fn call_openai(n: &NodeContext<'_>, m: &ModelCfg, system: &str, turns: &[T
     }
     let mut headers = HashMap::new();
     if !m.api_key.is_empty() { headers.insert("Authorization".to_string(), format!("Bearer {}", m.api_key)); }
-    let resp = n.proxy.call_external(&url, Method::POST, headers, Some(body), 120, n.user_id).await.map_err(err)?;
+    let resp = n.proxy.call_external(&url, Method::POST, headers, Some(body), 120, n.user_id).await.map_err(NodeError::from)?;
 
     let msg = resp.body.pointer("/choices/0/message").cloned().unwrap_or(json!({}));
     if let Some(tcs) = msg.get("tool_calls").and_then(|v| v.as_array()) {
@@ -263,7 +261,7 @@ async fn call_gemini(n: &NodeContext<'_>, m: &ModelCfg, system: &str, turns: &[T
     }
     let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", m.model, m.api_key);
     let body = json!({ "contents": contents });
-    let resp = n.proxy.call_external(&url, Method::POST, HashMap::new(), Some(body), 120, n.user_id).await.map_err(err)?;
+    let resp = n.proxy.call_external(&url, Method::POST, HashMap::new(), Some(body), 120, n.user_id).await.map_err(NodeError::from)?;
     let text = resp.body.pointer("/candidates/0/content/parts/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
     Ok(Reply::Text(text))
 }

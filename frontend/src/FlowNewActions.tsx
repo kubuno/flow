@@ -1,33 +1,32 @@
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+/**
+ * Items of the sidebar "New" button for Flow — DATA for the project's menu
+ * component (`MenuDropdown` from @ui), contributed through the generic
+ * 'shell.new-actions' extension point (see entry.ts). Evaluated when the menu
+ * opens, so labels are always fresh, without hooks.
+ */
+import type { MenuItem } from '@ui'
 import { Workflow as WorkflowIcon } from 'lucide-react'
-import { useLocation, useNavigate } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
+// `navigate` is the core's SPA navigation helper for code running outside
+// React: the shell hands it the router's real `navigate`.
+import { i18n, navigate } from '@kubuno/sdk'
 import { flowApi } from './api'
 
-// Entrée du bouton « Nouveau » du shell (slot `sidebar-new-actions`). Rendue
-// dans le DropdownMenu.Root du core → Radix doit être un singleton partagé
-// (cf. facade vendor-radix-menu), sinon « `MenuItem` must be used within `Menu` ».
-const ITEM =
-  'flex items-center gap-2.5 px-3 py-2 text-sm text-text-primary rounded-md ' +
-  'hover:bg-surface-2 cursor-pointer outline-none transition-colors'
+// Creation failures were already silent in the previous component (empty
+// catch); keep that behaviour without unhandled rejections.
+const createWorkflow = async () => {
+  const wf = await flowApi.create({ name: i18n.t('flow:new_workflow') })
+  navigate(`/flow/${wf.id}`)
+}
 
-export default function FlowNewActions() {
-  const { t } = useTranslation('flow')
-  const location = useLocation()
-  const navigate = useNavigate()
-  if (!location.pathname.startsWith('/flow')) return null
+export function flowNewActionItems(): MenuItem[] {
+  if (!window.location.pathname.startsWith('/flow')) return []
 
-  const create = async () => {
-    try {
-      const wf = await flowApi.create({ name: t('new_workflow') })
-      navigate(`/flow/${wf.id}`)
-    } catch { /* ignore */ }
-  }
-
-  return (
-    <DropdownMenu.Item onSelect={create} className={ITEM}>
-      <WorkflowIcon size={16} className="text-primary" />
-      {t('new_workflow')}
-    </DropdownMenu.Item>
-  )
+  return [
+    {
+      type: 'action',
+      label: i18n.t('flow:new_workflow'),
+      icon: <WorkflowIcon size={16} className="text-primary" />,
+      onClick: () => { createWorkflow().catch(() => {}) },
+    },
+  ]
 }

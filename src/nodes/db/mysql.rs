@@ -9,6 +9,7 @@ use sqlx::{Column, Connection, MySql, Row};
 use crate::nodes::trait_::{
     ExecutionContext, FieldDef, FieldType, NodeCategory, NodeContext, NodeError, NodeMeta, NodeOutput,
 };
+use crate::runtime::net_guard::{guard_mysql_options, guarded_mysql_dsn};
 
 type MyQuery<'q> = sqlx::query::Query<'q, MySql, MySqlArguments>;
 
@@ -48,8 +49,10 @@ fn row_to_json(row: &sqlx::mysql::MySqlRow) -> Value {
     Value::Object(obj)
 }
 
-async fn open(config: &Value) -> Result<MySqlConnection, NodeError> {
-    if let Some(cred) = config.get("credential").filter(|v| v.get("host").is_some()) {
+/// The host comes from the node config, so the egress guard runs before the
+/// socket is opened and the connection targets the address it validated.
+async fn open(config: &Value, n: &NodeContext<'_>) -> Result<MySqlConnection, NodeError> {
+    let opts = if let Some(cred) = config.get("credential").filter(|v| v.get("host").is_some()) {
         let s = |k: &str| cred.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
         let port = cred.get("port").and_then(|v| v.as_i64())
             .or_else(|| cred.get("port").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()))
@@ -57,12 +60,14 @@ async fn open(config: &Value) -> Result<MySqlConnection, NodeError> {
         let mut opts = MySqlConnectOptions::new().host(&s("host")).port(port).username(&s("user"));
         let db = s("database"); if !db.is_empty() { opts = opts.database(&db); }
         let pass = s("password"); if !pass.is_empty() { opts = opts.password(&pass); }
-        return MySqlConnection::connect_with(&opts).await
-            .map_err(|e| NodeError::ServiceError(format!("Connexion MySQL : {e}")));
-    }
-    let dsn = config.get("connection").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
-        .ok_or(NodeError::MissingField("connection"))?;
-    MySqlConnection::connect(dsn).await
+        guard_mysql_options(n.proxy, opts).await.map_err(NodeError::from)?
+    } else {
+        let dsn = config.get("connection").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+            .ok_or(NodeError::MissingField("connection"))?;
+        guarded_mysql_dsn(n.proxy, dsn).await.map_err(NodeError::from)?
+    };
+
+    MySqlConnection::connect_with(&opts).await
         .map_err(|e| NodeError::ServiceError(format!("Connexion MySQL : {e}")))
 }
 
@@ -94,10 +99,10 @@ impl crate::nodes::trait_::NodeExecutor for MySqlQueryNode {
         }
     }
 
-    async fn execute(&self, config: Value, _ctx: &ExecutionContext, _n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
+    async fn execute(&self, config: Value, _ctx: &ExecutionContext, n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
         let query = config.get("query").and_then(|v| v.as_str()).ok_or(NodeError::MissingField("query"))?;
         let params: Vec<Value> = config.get("params").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        let mut conn = open(&config).await?;
+        let mut conn = open(&config, n).await?;
 
         if returns_rows(query) {
             let rows = bind_params(sqlx::query(query), &params).fetch_all(&mut conn).await

@@ -56,7 +56,7 @@ pub async fn run(State(state): State<AppState>, headers: HeaderMap, Json(args): 
 
     let node_ctx = NodeContext {
         proxy: &state.proxy, user_id, db: &state.db, settings: &state.settings,
-        registry: &state.registry, files_client: &state.files_client, depth: 0,
+        instance: state.instance(), registry: &state.registry, files_client: &state.files_client, depth: 0,
     };
     let output = run_workflow_inline(&node_ctx, user_id, wf_id, &definition, input)
         .await

@@ -154,6 +154,8 @@ pub struct NodeContext<'a> {
     pub user_id:      Uuid,
     pub db:           &'a sqlx::PgPool,
     pub settings:     &'a Settings,
+    /// Snapshot of the admin-editable instance settings for this run.
+    pub instance:     crate::config::InstanceConfig,
     /// Registre des nœuds — permet à un nœud d'en exécuter d'autres (sous-workflow).
     pub registry:     &'a crate::nodes::NodeRegistry,
     /// Face client du module `files` — lecture du contenu d'autres workflows.
@@ -208,6 +210,9 @@ pub enum NodeError {
     ProxyError(String),
     #[error("Erreur du service : {0}")]
     ServiceError(String),
+    /// Outbound connection refused by the egress guard (SSRF protection).
+    #[error("Connexion sortante bloquée : {0}")]
+    Blocked(String),
     #[error("Arrêt demandé : {0}")]
     Stopped(String),
     #[error("{0}")]
@@ -216,8 +221,20 @@ pub enum NodeError {
 
 impl NodeError {
     /// L'erreur justifie-t-elle un retry du job ?
+    /// `Blocked` never does: the egress guard's verdict would be identical.
     pub fn is_retryable(&self) -> bool {
         matches!(self, NodeError::ProxyError(_) | NodeError::ServiceError(_))
+    }
+}
+
+impl From<crate::runtime::core_proxy::ProxyError> for NodeError {
+    /// Keeps a refused egress a refusal all the way up: mapping it to
+    /// `ProxyError`/`ServiceError` would make the worker retry a policy decision.
+    fn from(e: crate::runtime::core_proxy::ProxyError) -> Self {
+        match e {
+            crate::runtime::core_proxy::ProxyError::Blocked(msg) => NodeError::Blocked(msg),
+            other => NodeError::ProxyError(other.to_string()),
+        }
     }
 }
 

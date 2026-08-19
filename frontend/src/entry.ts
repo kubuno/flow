@@ -1,10 +1,10 @@
 /** Bundle MODULE flow — chargé à l'exécution (cf. vite.module.config). */
 import { lazy } from 'react'
-import { RouteRegistry, CollapseSidebarRegistry, WaffleAppRegistry, FileTypeRegistry, FaviconRegistry, ModuleSettingsRegistry, useToolbarStore, SlotRegistry, SDK_VERSION } from '@kubuno/sdk'
+import { RouteRegistry, CollapseSidebarRegistry, WaffleAppRegistry, FileTypeRegistry, FaviconRegistry, ModuleSettingsRegistry, useToolbarStore, ExtensionRegistry, SDK_VERSION } from '@kubuno/sdk'
 import './index.css'
 import './i18n'
 import FlowLogo from './FlowLogo'
-import FlowNewActions from './FlowNewActions'
+import { flowNewActionItems } from './FlowNewActions'
 
 export const sdkVersion = SDK_VERSION
 
@@ -25,8 +25,12 @@ export function register() {
   // The header gear button opens the per-user Flow settings while in /flow.
   ModuleSettingsRegistry.register('flow')
 
-  // Bouton « Nouveau » du shell (comme les autres modules) → crée un workflow.
-  SlotRegistry.register('sidebar-new-actions', 'flow', FlowNewActions)
+  // Shell "New" button: contribute MenuItem[] DATA to the generic
+  // 'shell.new-actions' extension point (consumed by the shell's MenuDropdown).
+  ExtensionRegistry.register('shell.new-actions', 'flow', {
+    moduleId: 'flow',
+    items: flowNewActionItems,
+  })
 
   useToolbarStore.getState().register({
     moduleId:    'flow',

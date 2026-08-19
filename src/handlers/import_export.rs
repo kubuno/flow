@@ -47,6 +47,10 @@ pub async fn import(
     user: FlowUserExt,
     Json(body): Json<Value>,
 ) -> Result<Json<Workflow>> {
+    // An import is a creation: the same ceiling applies, or the quota would be
+    // a formality anyone could step around with an export file.
+    crate::handlers::workflows::enforce_workflow_quota(&state, user.id).await?;
+
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("Workflow importé").to_string();
 
     // Format Kubuno : { definition: { nodes, edges } }

@@ -35,6 +35,34 @@ pub async fn list(
     Ok(Json(workflows))
 }
 
+/// Refuses a new workflow when the owner already sits at the instance ceiling.
+///
+/// Checked before the `.kbflw` file is created, so a refused creation leaves
+/// nothing behind in Drive. `0` means unlimited and skips the count entirely.
+pub(crate) async fn enforce_workflow_quota(state: &AppState, owner: Uuid) -> Result<()> {
+    let max = state.instance().max_workflows_per_user;
+    if max <= 0 {
+        return Ok(());
+    }
+    let owned = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM flow.workflows WHERE owner_id = $1 AND is_trashed = FALSE",
+    )
+    .bind(owner)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, owner = %owner, "Comptage des workflows pour le quota");
+        FlowError::Database(e)
+    })?;
+
+    if owned >= max as i64 {
+        return Err(FlowError::Validation(format!(
+            "Quota atteint : {max} workflows au maximum par utilisateur sur cette instance."
+        )));
+    }
+    Ok(())
+}
+
 /// POST /workflows — création.
 pub async fn create(
     State(state): State<AppState>,
@@ -42,6 +70,7 @@ pub async fn create(
     Json(dto): Json<CreateWorkflowDto>,
 ) -> Result<Json<Workflow>> {
     dto.validate().map_err(|e| FlowError::Validation(e.to_string()))?;
+    enforce_workflow_quota(&state, user.id).await?;
 
     let definition = dto.definition.unwrap_or_else(cf::empty_definition);
     let tags = dto.tags.unwrap_or_default();
@@ -244,6 +273,7 @@ pub async fn duplicate(
     user: FlowUserExt,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Workflow>> {
+    enforce_workflow_quota(&state, user.id).await?;
     let src = fetch_owned_full(&state, id, user.id).await?;
     let new_name = format!("{} (copie)", src.name);
     let new_file_id = cf::create_workflow_file(&state, user.id, &new_name, src.definition.clone()).await?;

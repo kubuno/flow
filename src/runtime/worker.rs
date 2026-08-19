@@ -122,6 +122,7 @@ async fn process_job(state: &AppState, job: queue::Job) {
         proxy:        state.proxy.clone(),
         settings:     state.settings.clone(),
         files_client: state.files_client.clone(),
+        instance:     state.instance(),
     };
 
     // Protège le fichier workflow tant que l'exécution se poursuit.
@@ -152,7 +153,7 @@ async fn process_job(state: &AppState, job: queue::Job) {
         _ => {
             let err = outcome.error_message.clone().unwrap_or_else(|| "Erreur inconnue".into());
             if outcome.retryable && job.attempt < job.max_attempts {
-                let delay = retry::backoff_delay(job.attempt, state.settings.runtime.retry_backoff_ms);
+                let delay = retry::backoff_delay(job.attempt, state.instance().retry_backoff_ms);
                 let _ = queue::reschedule(&state.db, job.id, delay.as_secs() as i64, &err).await;
                 tracing::warn!(job = %job.id, attempt = job.attempt, "Job replanifié (retry)");
             } else {
@@ -184,7 +185,7 @@ async fn process_job(state: &AppState, job: queue::Job) {
 }
 
 async fn prune_history(state: &AppState, workflow_id: Uuid) {
-    let keep = state.settings.runtime.max_execution_history;
+    let keep = state.instance().max_execution_history;
     let _ = sqlx::query(
         r#"DELETE FROM flow.executions
            WHERE workflow_id = $1 AND id NOT IN (

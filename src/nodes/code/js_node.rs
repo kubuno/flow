@@ -35,11 +35,12 @@ impl crate::nodes::trait_::NodeExecutor for CodeNode {
     async fn execute(&self, config: Value, ctx: &ExecutionContext, node_ctx: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
         let code = config.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let input = ctx.input.clone();
-        let timeout = Duration::from_secs(node_ctx.settings.code_node.timeout_secs.max(1));
+        let timeout = Duration::from_secs(node_ctx.instance.code_node_timeout_secs.max(1));
+        let memory_mb = node_ctx.instance.code_node_memory_limit_mb;
 
         let result = tokio::time::timeout(
             timeout + Duration::from_millis(500),
-            tokio::task::spawn_blocking(move || run_js(&code, &input, timeout)),
+            tokio::task::spawn_blocking(move || run_js(&code, &input, timeout, memory_mb)),
         )
         .await;
 
@@ -52,10 +53,21 @@ impl crate::nodes::trait_::NodeExecutor for CodeNode {
     }
 }
 
-fn run_js(code: &str, input: &Value, _timeout: Duration) -> Result<Value, String> {
+/// Runs the snippet in a fresh QuickJS runtime bounded in BOTH dimensions.
+///
+/// `memory_mb` is handed to the engine's own allocator, so an allocation past
+/// the ceiling fails inside JavaScript (the script gets an out-of-memory error)
+/// instead of growing the module's process. The interrupt handler enforces the
+/// deadline INSIDE the interpreter: the outer `tokio::time::timeout` only ever
+/// abandoned the future, leaving a `while(true){}` spinning on a blocking-pool
+/// thread for the lifetime of the process. Both bounds are the administrator's.
+fn run_js(code: &str, input: &Value, timeout: Duration, memory_mb: u32) -> Result<Value, String> {
     use rquickjs::{Context, Runtime};
 
     let rt = Runtime::new().map_err(|e| format!("runtime QuickJS : {e}"))?;
+    rt.set_memory_limit(memory_mb.max(1) as usize * 1024 * 1024);
+    let deadline = std::time::Instant::now() + timeout;
+    rt.set_interrupt_handler(Some(Box::new(move || std::time::Instant::now() >= deadline)));
     let context = Context::full(&rt).map_err(|e| format!("contexte QuickJS : {e}"))?;
 
     let input_json = serde_json::to_string(input).unwrap_or_else(|_| "null".into());

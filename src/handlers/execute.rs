@@ -73,6 +73,7 @@ pub async fn execute(
             proxy:        st.proxy.clone(),
             settings:     st.settings.clone(),
             files_client: st.files_client.clone(),
+            instance:     st.instance(),
         };
         let outcome = executor.run(execution_id, owner, id, &definition, trigger_data, 1).await;
         if let Some(fid) = file_id {
@@ -212,7 +213,7 @@ pub async fn test_node(
     };
     let node_ctx = NodeContext {
         proxy: &state.proxy, user_id: user.id, db: &state.db, settings: &state.settings,
-        registry: &state.registry, files_client: &state.files_client, depth: 0,
+        instance: state.instance(), registry: &state.registry, files_client: &state.files_client, depth: 0,
     };
 
     let mut resolved = resolver::resolve_value(&node.config, &full);

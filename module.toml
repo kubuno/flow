@@ -43,3 +43,173 @@ publishes = [
     "WorkflowExecuted",
     "WorkflowFailed",
 ]
+
+# ── Admin instance settings ─────────────────────────────────────────────────────
+# Editable from the core admin console; consumed live by the runtime. Backend-only
+# (never `public`): these are execution limits, not frontend-facing config.
+
+[[setting_groups]]
+id          = "execution"
+label       = "Exécution & limites"
+icon        = "Gauge"
+position    = 1
+description  = "Limites d'exécution des workflows : délais, réessais, rétention de l'historique."
+
+[[settings]]
+key         = "node_timeout_secs"
+scope       = "global"
+type        = "int"
+group       = "execution"
+default     = 60
+min         = 1
+max         = 3600
+unit        = "s"
+label       = "Délai par nœud (secondes)"
+description = "Durée maximale d'exécution d'un nœud avant abandon."
+
+[[settings]]
+key         = "code_node_timeout_secs"
+scope       = "global"
+type        = "int"
+group       = "execution"
+default     = 30
+min         = 1
+max         = 300
+unit        = "s"
+label       = "Délai du nœud Code (secondes)"
+description = "Durée maximale d'exécution du JavaScript d'un nœud Code (QuickJS). Appliquée à l'intérieur du moteur : un script bloqué est interrompu, il ne monopolise plus un fil d'exécution."
+
+[[settings]]
+key         = "code_node_memory_limit_mb"
+scope       = "global"
+type        = "int"
+group       = "execution"
+default     = 64
+min         = 8
+max         = 4096
+unit        = "Mio"
+label       = "Mémoire maximale du nœud Code"
+description = "Plafond mémoire du moteur JavaScript d'un nœud Code. Au-delà, l'allocation échoue dans le script au lieu de faire grossir le processus du module."
+
+[[settings]]
+key         = "max_retries"
+scope       = "global"
+type        = "int"
+group       = "execution"
+default     = 3
+min         = 0
+max         = 10
+label       = "Réessais maximum"
+description = "Nombre de réessais d'un workflow après un échec réessayable. 0 = aucun réessai."
+
+[[settings]]
+key         = "retry_backoff_ms"
+scope       = "global"
+type        = "int"
+group       = "execution"
+default     = 1000
+min         = 0
+max         = 600000
+unit        = "ms"
+label       = "Délai de base des réessais (ms)"
+description = "Délai initial du backoff exponentiel entre deux réessais."
+
+[[settings]]
+key         = "max_execution_history"
+scope       = "global"
+type        = "int"
+group       = "execution"
+default     = 500
+min         = 1
+max         = 1000000
+label       = "Rétention de l'historique d'exécution"
+description = "Nombre d'exécutions conservées par workflow ; les plus anciennes sont supprimées au-delà."
+
+# ── Réseau sortant ─────────────────────────────────────────────────────────────
+# Ces deux listes ne font que RESTREINDRE : le garde anti-SSRF (schémas non
+# http(s), boucle locale, RFC1918, lien-local, métadonnées d'instance, CGNAT,
+# ULA…) s'applique toujours et n'est pas désactivable depuis la console.
+
+[[setting_groups]]
+id          = "network"
+label       = "Réseau sortant"
+icon        = "Globe"
+position    = 2
+description  = "Hôtes que les workflows sont autorisés à joindre sur Internet."
+
+[[settings]]
+key         = "egress_allowed_hosts"
+scope       = "global"
+type        = "string"
+group       = "network"
+default     = ""
+multiline   = true
+label       = "Hôtes autorisés"
+placeholder = "api.exemple.com\n*.exemple.org"
+description = "Un hôte par ligne. Tant que la liste est vide, tous les hôtes publics restent joignables. Dès qu'elle contient une entrée, tout hôte absent est refusé. « *.exemple.com » couvre les sous-domaines (pas le domaine nu). Les lignes commençant par « # » sont ignorées."
+
+[[settings]]
+key         = "egress_denied_hosts"
+scope       = "global"
+type        = "string"
+group       = "network"
+default     = ""
+multiline   = true
+label       = "Hôtes interdits"
+placeholder = "*.tracker.net"
+description = "Un hôte par ligne, même syntaxe. Prioritaire sur la liste des hôtes autorisés."
+
+# ── Quotas & déclencheurs publics ──────────────────────────────────────────────
+
+[[setting_groups]]
+id          = "quotas"
+label       = "Quotas et déclencheurs"
+icon        = "Shield"
+position    = 3
+description  = "Plafonds par utilisateur et contrôle des déclencheurs accessibles sans authentification."
+
+[[settings]]
+key         = "max_workflows_per_user"
+scope       = "global"
+type        = "int"
+group       = "quotas"
+default     = 0
+min         = 0
+max         = 100000
+label       = "Nombre maximal de workflows par utilisateur"
+description = "Plafond du nombre de workflows qu'un utilisateur peut posséder (création, duplication, import). 0 = illimité."
+
+[[settings]]
+key         = "min_schedule_interval_secs"
+scope       = "global"
+type        = "int"
+group       = "quotas"
+default     = 0
+min         = 0
+max         = 86400
+unit        = "s"
+label       = "Intervalle minimal entre deux exécutions planifiées"
+description = "Délai minimal entre deux déclenchements automatiques d'un même workflow par un nœud « Planification ». 0 = aucun plancher. Le balayage étant à la minute, une valeur inférieure à 60 s ne change rien."
+
+[[settings]]
+key         = "allow_public_webhooks"
+scope       = "global"
+type        = "bool"
+group       = "quotas"
+default     = true
+risk        = "warning"
+label       = "Autoriser les webhooks entrants publics"
+description = "Si désactivé, l'adresse de réception des webhooks refuse tout appel : les jetons déjà émis restent en base mais ne déclenchent plus rien."
+
+[[settings]]
+key         = "webhook_max_body_kb"
+scope       = "global"
+type        = "int"
+group       = "quotas"
+default     = 1024
+min         = 1
+max         = 2048
+unit        = "Kio"
+depends_on  = "allow_public_webhooks"
+label       = "Taille maximale du corps d'un webhook"
+description = "Au-delà, l'appel est refusé sans être analysé ni mis en file."

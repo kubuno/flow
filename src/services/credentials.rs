@@ -1,13 +1,15 @@
 //! Resolve a stored credential to its decrypted JSON payload (for node execution).
 
 use serde_json::Value;
+use std::net::SocketAddr;
 use std::time::Duration;
 use uuid::Uuid;
 
 use crate::models::credential::Credential;
 use crate::nodes::trait_::FieldType;
 use crate::nodes::NodeRegistry;
-use crate::runtime::core_proxy::CoreProxy;
+use crate::runtime::core_proxy::{CoreProxy, ProxyError};
+use crate::runtime::net_guard::guard_pg_options;
 use crate::services::crypto;
 
 /// Load + decrypt a credential owned by `owner`. Returns the JSON object of
@@ -82,7 +84,7 @@ fn s(data: &Value, k: &str) -> String {
 pub async fn test(proxy: &CoreProxy, type_id: &str, data: &Value) -> TestResult {
     match type_id {
         // PostgreSQL-protocol databases → real connection + SELECT 1.
-        "postgres" | "cockroachDb" => test_postgres(data).await,
+        "postgres" | "cockroachDb" => test_postgres(proxy, data).await,
 
         // AI providers exposing a models listing endpoint (auth check).
         "anthropicApi" => test_http_auth(proxy, "https://api.anthropic.com/v1/models",
@@ -94,11 +96,11 @@ pub async fn test(proxy: &CoreProxy, type_id: &str, data: &Value) -> TestResult 
             &format!("https://generativelanguage.googleapis.com/v1beta/models?key={}", s(data, "apiKey")), &[]).await,
 
         // Host-based services → TCP reachability of host:port.
-        "mysql" | "mariaDb" => test_tcp(&s(data, "host"), port(data, 3306)).await,
-        "microsoftSql" => test_tcp(&s(data, "host"), port(data, 1433)).await,
-        "redis" => test_tcp(&s(data, "host"), port(data, 6379)).await,
-        "smtp" => test_tcp(&s(data, "host"), port(data, 587)).await,
-        "imap" => test_tcp(&s(data, "host"), port(data, 993)).await,
+        "mysql" | "mariaDb" => test_tcp(proxy, &s(data, "host"), port(data, 3306)).await,
+        "microsoftSql" => test_tcp(proxy, &s(data, "host"), port(data, 1433)).await,
+        "redis" => test_tcp(proxy, &s(data, "host"), port(data, 6379)).await,
+        "smtp" => test_tcp(proxy, &s(data, "host"), port(data, 587)).await,
+        "imap" => test_tcp(proxy, &s(data, "host"), port(data, 993)).await,
 
         _ => TestResult::na(),
     }
@@ -111,7 +113,7 @@ fn port(data: &Value, default: u16) -> u16 {
         .unwrap_or(default)
 }
 
-async fn test_postgres(data: &Value) -> TestResult {
+async fn test_postgres(proxy: &CoreProxy, data: &Value) -> TestResult {
     use sqlx::postgres::{PgConnectOptions, PgSslMode};
     use sqlx::{Connection, PgConnection, Row};
     let host = s(data, "host");
@@ -122,6 +124,15 @@ async fn test_postgres(data: &Value) -> TestResult {
         .ssl_mode(if ssl { PgSslMode::Require } else { PgSslMode::Prefer });
     let db = s(data, "database"); if !db.is_empty() { opts = opts.database(&db); }
     let pass = s(data, "password"); if !pass.is_empty() { opts = opts.password(&pass); }
+
+    // "Testing a credential" is an unauthenticated-looking way of asking the
+    // server to open a socket wherever the caller wants, so the same egress
+    // verdict applies here as in the database nodes. The guard also swaps the
+    // host for the address it validated.
+    let opts = match guard_pg_options(proxy, opts).await {
+        Ok(o) => o,
+        Err(e) => return blocked_result(&host, e),
+    };
 
     let attempt = async {
         let mut conn = PgConnection::connect_with(&opts).await.map_err(|e| e.to_string())?;
@@ -157,12 +168,33 @@ async fn test_http_auth(proxy: &CoreProxy, url: &str, headers: &[(&str, &str)]) 
     }
 }
 
-async fn test_tcp(host: &str, port: u16) -> TestResult {
+/// Turns a refused egress into a user-visible failure. The reason is logged and
+/// shown as-is: it names a host and a policy, never a credential value.
+fn blocked_result(host: &str, e: ProxyError) -> TestResult {
+    tracing::warn!(host = %host, error = %e, "Test de credential : connexion sortante refusée");
+    TestResult::fail(e.to_string())
+}
+
+/// Raw reachability probe. Without the guard this was the simplest port scanner
+/// of the host and of everything the instance can route to; it now refuses
+/// internal addresses and connects to the address it validated rather than
+/// re-resolving the name.
+async fn test_tcp(proxy: &CoreProxy, host: &str, port: u16) -> TestResult {
     if host.is_empty() { return TestResult::fail("Hôte requis".into()); }
-    let addr = format!("{host}:{port}");
-    match tokio::time::timeout(Duration::from_secs(8), tokio::net::TcpStream::connect(&addr)).await {
-        Ok(Ok(_)) => TestResult::ok(&format!("{addr} joignable")),
-        Ok(Err(e)) => TestResult::fail(format!("Inaccessible : {e}")),
-        Err(_) => TestResult::fail(format!("{addr} : délai dépassé")),
+    let ips = match proxy.check_egress_host(host, port).await {
+        Ok(ips) => ips,
+        Err(e) => return blocked_result(host, e),
+    };
+    let label = format!("{host}:{port}");
+    // Each validated address is tried in turn, as the resolver-driven connect did.
+    let mut last = TestResult::fail(format!("Aucune adresse résolue pour {host}"));
+    for ip in ips {
+        let addr = SocketAddr::new(ip, port);
+        match tokio::time::timeout(Duration::from_secs(8), tokio::net::TcpStream::connect(addr)).await {
+            Ok(Ok(_)) => return TestResult::ok(&format!("{label} joignable")),
+            Ok(Err(e)) => last = TestResult::fail(format!("Inaccessible : {e}")),
+            Err(_) => last = TestResult::fail(format!("{label} : délai dépassé")),
+        }
     }
+    last
 }

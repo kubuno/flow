@@ -2,6 +2,7 @@
 //! URL). One-shot async connection per execution.
 
 use async_trait::async_trait;
+use redis::{ConnectionAddr, ConnectionInfo, IntoConnectionInfo};
 use serde_json::{json, Value};
 
 use crate::nodes::trait_::{
@@ -24,6 +25,38 @@ fn redis_url(config: &Value) -> Result<String, NodeError> {
     config.get("connection").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
         .map(str::to_string)
         .ok_or(NodeError::MissingField("connection"))
+}
+
+/// Applies the egress guard to a user-supplied Redis URL and returns the
+/// connection info to dial. On a plain TCP endpoint the host is REPLACED by the
+/// address the guard validated, which closes the DNS-rebinding window; over TLS
+/// the name is kept, because the certificate is checked against it.
+async fn guarded_connection(url: &str, n: &NodeContext<'_>) -> Result<ConnectionInfo, NodeError> {
+    let mut info = url
+        .into_connection_info()
+        .map_err(|e| NodeError::InvalidConfig(format!("URL Redis : {e}")))?;
+
+    match &mut info.addr {
+        ConnectionAddr::Tcp(host, port) => {
+            let ips = n
+                .proxy
+                .check_egress_host(host.as_str(), *port)
+                .await
+                .map_err(NodeError::from)?;
+            if let Some(ip) = ips.first() {
+                *host = ip.to_string();
+            }
+        }
+        ConnectionAddr::TcpTls { host, port, .. } => {
+            n.proxy
+                .check_egress_host(host.as_str(), *port)
+                .await
+                .map_err(NodeError::from)?;
+        }
+        // Unix domain socket: never routed, so never checkable — refuse it.
+        _ => return Err(NodeError::Blocked("socket local interdit dans l'URL Redis".into())),
+    }
+    Ok(info)
 }
 
 pub struct RedisNode;
@@ -52,14 +85,15 @@ impl crate::nodes::trait_::NodeExecutor for RedisNode {
         }
     }
 
-    async fn execute(&self, config: Value, _ctx: &ExecutionContext, _n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
+    async fn execute(&self, config: Value, _ctx: &ExecutionContext, n: &NodeContext<'_>) -> Result<NodeOutput, NodeError> {
         let url = redis_url(&config)?;
         let op = config.get("operation").and_then(|v| v.as_str()).unwrap_or("get");
         let key = config.get("key").and_then(|v| v.as_str()).ok_or(NodeError::MissingField("key"))?.to_string();
         let val = config.get("value").map(|v| match v { Value::String(s) => s.clone(), Value::Null => String::new(), other => other.to_string() }).unwrap_or_default();
         let ttl = config.get("ttl").and_then(|v| v.as_i64());
 
-        let client = redis::Client::open(url).map_err(|e| NodeError::ServiceError(format!("Redis : {e}")))?;
+        let info = guarded_connection(&url, n).await?;
+        let client = redis::Client::open(info).map_err(|e| NodeError::ServiceError(format!("Redis : {e}")))?;
         let mut con = client.get_multiplexed_async_connection().await
             .map_err(|e| NodeError::ServiceError(format!("Connexion Redis : {e}")))?;
         let svc = |e: redis::RedisError| NodeError::ServiceError(format!("Redis : {e}"));

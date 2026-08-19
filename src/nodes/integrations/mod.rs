@@ -101,7 +101,7 @@ impl crate::nodes::trait_::NodeExecutor for ServiceNode {
         let body = if opn.body { config.get("body").filter(|v| !v.is_null()).cloned() } else { None };
 
         let resp = n.proxy.call_external(&url, method, headers, body, 60, n.user_id)
-            .await.map_err(|e| NodeError::ProxyError(e.to_string()))?;
+            .await.map_err(NodeError::from)?;
         Ok(NodeOutput::data(json!({ "status": resp.status, "body": resp.body })))
     }
 }

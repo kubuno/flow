@@ -35,6 +35,12 @@ pub fn spawn_schedulers(state: AppState) {
 // ── CRON ─────────────────────────────────────────────────────────────────────────
 
 async fn cron_loop(state: AppState) {
+    // Last automatic run of each workflow, for the instance-wide frequency floor.
+    // In-process only: it is a throttle, not an audit trail, and a restart simply
+    // lets the next matching minute through.
+    let mut last_fired: std::collections::HashMap<Uuid, std::time::Instant> =
+        std::collections::HashMap::new();
+
     loop {
         // Attendre le prochain top de minute (00 seconde).
         let now = Utc::now();
@@ -49,7 +55,22 @@ async fn cron_loop(state: AppState) {
         .await
         .unwrap_or_default();
 
+        let cfg = state.instance();
+        let floor = std::time::Duration::from_secs(cfg.min_schedule_interval_secs);
+        // A workflow that no longer exists must not keep a throttle entry alive.
+        let alive: std::collections::HashSet<Uuid> = active.iter().map(|(id, _, _)| *id).collect();
+        last_fired.retain(|id, _| alive.contains(id));
+
         for (wf_id, owner_id, file_id) in active {
+            // Instance-wide frequency floor: an expression as greedy as
+            // `* * * * *` is honoured no more often than the administrator allows.
+            if !floor.is_zero() {
+                if let Some(prev) = last_fired.get(&wf_id) {
+                    if prev.elapsed() < floor {
+                        continue;
+                    }
+                }
+            }
             let def_val = match file_id {
                 Some(fid) => crate::services::content_files::read_definition(&state, owner_id, fid).await
                     .unwrap_or_else(|_| crate::services::content_files::empty_definition()),
@@ -60,7 +81,8 @@ async fn cron_loop(state: AppState) {
                 if let Some(expr) = node.config.get("cron").and_then(|v| v.as_str()) {
                     if cron_matches(expr, &now) {
                         let trigger_data = serde_json::json!({ "cron": expr, "fired_at": now.to_rfc3339() });
-                        let _ = queue::enqueue(&state.db, wf_id, owner_id, "cron", trigger_data, state.settings.runtime.max_retries).await;
+                        let _ = queue::enqueue(&state.db, wf_id, owner_id, "cron", trigger_data, cfg.max_retries).await;
+                        last_fired.insert(wf_id, std::time::Instant::now());
                     }
                 }
             }
@@ -162,7 +184,7 @@ async fn event_loop(state: AppState) -> Result<(), sqlx::Error> {
             });
             if subscribes {
                 let trigger_data = serde_json::json!({ "event_type": event_type, "payload": event_payload });
-                let _ = queue::enqueue(&state.db, wf_id, owner_id, "event", trigger_data, state.settings.runtime.max_retries).await;
+                let _ = queue::enqueue(&state.db, wf_id, owner_id, "event", trigger_data, state.instance().max_retries).await;
             }
         }
     }
@@ -203,7 +225,7 @@ pub async fn dispatch_error_workflows(
         };
         let def = WorkflowDefinition::from_value(&def_val);
         if def.nodes.iter().any(|n| n.node_type == "trigger.error") {
-            let _ = queue::enqueue(&state.db, wf_id, owner_id, "error", trigger_data.clone(), state.settings.runtime.max_retries).await;
+            let _ = queue::enqueue(&state.db, wf_id, owner_id, "error", trigger_data.clone(), state.instance().max_retries).await;
         }
     }
 }

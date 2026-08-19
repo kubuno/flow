@@ -86,7 +86,7 @@ impl crate::nodes::trait_::NodeExecutor for SupabaseNode {
         };
 
         let resp = n.proxy.call_external(&url, method, headers, body, 30, n.user_id)
-            .await.map_err(|e| NodeError::ProxyError(e.to_string()))?;
+            .await.map_err(NodeError::from)?;
         let count = resp.body.as_array().map(|a| a.len()).unwrap_or(0);
         Ok(NodeOutput::data(json!({ "rows": resp.body, "count": count, "status": resp.status })))
     }

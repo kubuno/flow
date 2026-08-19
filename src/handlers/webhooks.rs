@@ -77,11 +77,28 @@ pub async fn register(
 }
 
 /// POST|GET /webhook/:token — réception publique d'un webhook (sans auth).
+///
+/// This is the module's only unauthenticated entry point, so both instance
+/// guards are applied BEFORE the token is even looked up: an instance that
+/// forbids public webhooks must not become a token oracle, and an oversized
+/// body must not be parsed.
 pub async fn receive(
     State(state): State<AppState>,
     Path(token): Path<String>,
-    body: Option<Json<Value>>,
+    body: axum::body::Bytes,
 ) -> Result<Json<Value>> {
+    let cfg = state.instance();
+    if !cfg.allow_public_webhooks {
+        return Err(FlowError::Forbidden);
+    }
+    let max_bytes = (cfg.webhook_max_body_kb.max(1) as usize).saturating_mul(1024);
+    if body.len() > max_bytes {
+        return Err(FlowError::Validation(format!(
+            "Corps du webhook trop volumineux (limite : {} Kio)",
+            cfg.webhook_max_body_kb
+        )));
+    }
+
     let row = sqlx::query_as::<_, (Uuid, Uuid)>(
         "SELECT workflow_id, owner_id FROM flow.webhooks WHERE token = $1",
     )
@@ -104,14 +121,20 @@ pub async fn receive(
         return Err(FlowError::Forbidden);
     }
 
-    let trigger_data = json!({ "body": body.map(|b| b.0).unwrap_or(Value::Null) });
+    // A non-JSON (or empty) body keeps the previous meaning: `null`.
+    let parsed: Value = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).unwrap_or(Value::Null)
+    };
+    let trigger_data = json!({ "body": parsed });
     let job_id = queue::enqueue(
         &state.db,
         workflow_id,
         owner_id,
         "webhook",
         trigger_data,
-        state.settings.runtime.max_retries,
+        cfg.max_retries,
     )
     .await?;
 
