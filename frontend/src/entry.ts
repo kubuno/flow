@@ -1,6 +1,6 @@
+import { RouteRegistry, CollapseSidebarRegistry, WaffleAppRegistry, FileTypeRegistry, FaviconRegistry, ModuleSettingsRegistry, useToolbarStore, ExtensionRegistry, SDK_VERSION } from '@kubuno/sdk'
 /** Bundle MODULE flow — chargé à l'exécution (cf. vite.module.config). */
 import { lazy } from 'react'
-import { RouteRegistry, CollapseSidebarRegistry, WaffleAppRegistry, FileTypeRegistry, FaviconRegistry, ModuleSettingsRegistry, useToolbarStore, ExtensionRegistry, SDK_VERSION } from '@kubuno/sdk'
 import './index.css'
 import './i18n'
 import FlowLogo from './FlowLogo'
@@ -9,7 +9,7 @@ import { flowNewActionItems } from './FlowNewActions'
 export const sdkVersion = SDK_VERSION
 
 export function register() {
-  FaviconRegistry.register('flow', '/flow-logo.svg')
+  FaviconRegistry.register('flow', '/flow-logo.png')
 
   // Type de fichier Kubuno produit par Flow (.kbflw) — filtrage StartPage + icône + ouverture.
   FileTypeRegistry.register({

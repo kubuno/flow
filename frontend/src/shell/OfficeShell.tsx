@@ -1,3 +1,4 @@
+import { WorkspaceShell, WORKSPACE_OFFICE, useSidebarStore, useConfirm } from '@kubuno/sdk'
 // OfficeShell — la chrome COMMUNE à tous les sous-éditeurs Office, qui remplace la
 // barre de menus + la toolbar par un RUBAN (façon MS Office). Enveloppe le
 // `WorkspaceShell` du core : reprend toutes ses props (topbar, titre, retour, thème,
@@ -8,7 +9,6 @@ import { useCallback, useEffect, useMemo, useState, type ComponentProps } from '
 import { useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Trash2, Maximize2, Minimize2 } from 'lucide-react'
-import { WorkspaceShell, WORKSPACE_OFFICE, useSidebarStore, useConfirm } from '@kubuno/sdk'
 import { useIsMobile, ConfirmDialog } from '@ui'
 import { Ribbon, RibbonTabStrip } from '../ribbon/Ribbon'
 import type { RibbonTab, RibbonGroup, RibbonItem } from '../ribbon/types'

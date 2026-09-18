@@ -1,9 +1,9 @@
+import { useConfirm } from '@kubuno/sdk'
 // Shared "could not open file" error dialog for every ribbon-based editor. Opening a
 // file from the « Fichier » backstage must never fail silently: on error we surface the
 // reason in a one-button modal (ConfirmDialog with `hideCancel`). Each editor renders
 // `openErrorDialog` and passes `showOpenError` to the `.catch` of its open call.
 import type { ReactElement } from 'react'
-import { useConfirm } from '@kubuno/sdk'
 import { ConfirmDialog } from '@ui'
 
 type TFn = (k: string, o?: Record<string, unknown>) => string

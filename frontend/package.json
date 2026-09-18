@@ -9,8 +9,6 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "clsx": "^2.0.0",
-    "date-fns": "^4.4.0",
     "lucide-react": "^1.17.0",
     "y-protocols": "1.0.7",
     "yjs": "^13.6.31"

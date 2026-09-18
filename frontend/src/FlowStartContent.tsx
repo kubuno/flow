@@ -1,3 +1,4 @@
+import { formatDate } from '@kubuno/sdk'
 // Start content (Accueil) — reused by the home page (ModuleHome) AND by the open
 // editor's backstage ("Fichier" tab). Recents + browse + Nouveau/Modèles/Import.
 // Extracted from FlowDashboard so both surfaces share the exact same UI without a
@@ -5,13 +6,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { format } from 'date-fns'
 import { Plus, Workflow as WorkflowIcon, Copy, Trash2, ExternalLink, Upload, LayoutTemplate } from 'lucide-react'
 import { Button } from '@ui'
 import type { StartPageRecentItem, MenuItem } from '@ui'
 import { ModuleStartPage } from '@kubuno/drive'
 import type { FileItem } from '@kubuno/drive'
-import { getDateLocale } from '@kubuno/sdk'
 import { flowApi } from './api'
 import { parseN8n, parseMake, parseExternalWorkflow } from './flowImport'
 import TemplatesModal from './TemplatesModal'
@@ -94,7 +93,7 @@ export default function FlowStartContent() {
   const recentItems: StartPageRecentItem[] = workflows.slice(0, 12).map(wf => ({
     id:       wf.id,
     name:     wf.name,
-    subtitle: wf.updated_at ? format(new Date(wf.updated_at), 'd MMM', { locale: getDateLocale(i18n.language) }) : undefined,
+    subtitle: wf.updated_at ? formatDate(new Date(wf.updated_at), 'date') : undefined,
     icon:     <WorkflowIcon size={18} className="text-text-tertiary" strokeWidth={1.5} />,
     onClick:  () => navigate(`/flow/${wf.id}`),
     actions: [

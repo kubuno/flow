@@ -1,7 +1,7 @@
+import { WORKSPACE_OFFICE, type WorkspaceTheme } from '@kubuno/sdk'
 // Teinte du ruban Flow (façon MS Office : une couleur de bande d'onglets qui sert
 // aussi d'accent). Vendoré depuis Office (système de ruban partagé, pas d'import
 // cross-module). Le corps + le contenu du ruban restent blancs.
-import { WORKSPACE_OFFICE, type WorkspaceTheme } from '@kubuno/sdk'
 
 // Construit un thème « ruban coloré » à partir d'une couleur de bande d'onglets.
 export function officeTheme(color: string): WorkspaceTheme {

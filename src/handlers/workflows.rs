@@ -14,19 +14,29 @@ use crate::{
     state::AppState,
 };
 
-/// GET /workflows — liste des workflows de l'utilisateur (hors corbeille).
+#[derive(Debug, serde::Deserialize)]
+pub struct ListQuery {
+    /// `true` lists the trash instead of the live workflows. Without it, tools
+    /// auditing which files still belong to a workflow cannot see the trashed
+    /// ones and would mistake their files for orphans.
+    pub trashed: Option<bool>,
+}
+
+/// GET /workflows[?trashed=true] — liste des workflows de l'utilisateur.
 /// Vue liste : la définition complète n'est pas chargée (un placeholder vide est
 /// renvoyé) — l'éditeur récupère le graphe réel via GET /workflows/:id.
 pub async fn list(
     State(state): State<AppState>,
     user: FlowUserExt,
+    axum::extract::Query(q): axum::extract::Query<ListQuery>,
 ) -> Result<Json<Vec<Workflow>>> {
     let mut workflows = sqlx::query_as::<_, Workflow>(
         r#"SELECT * FROM flow.workflows
-           WHERE owner_id = $1 AND is_trashed = FALSE
+           WHERE owner_id = $1 AND is_trashed = $2
            ORDER BY updated_at DESC"#,
     )
     .bind(user.id)
+    .bind(q.trashed.unwrap_or(false))
     .fetch_all(&state.db)
     .await?;
     for wf in &mut workflows {
@@ -221,17 +231,29 @@ pub async fn update(
     Ok(Json(wf))
 }
 
-/// DELETE /workflows/:id — corbeille.
+/// DELETE /workflows/:id — permanent deletion, as the UI promises.
+///
+/// This used to only flag the row `is_trashed`, but the module offers neither a
+/// trash view nor a restore action: the workflow vanished from the list while its
+/// `.kbflw` file stayed in Drive and still opened, resurrecting something the user
+/// believed deleted. Deleting for real keeps Drive and the list in agreement.
+/// Executions, webhooks and jobs go with it (ON DELETE CASCADE).
 pub async fn delete(
     State(state): State<AppState>,
     user: FlowUserExt,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
-    fetch_owned(&state, id, user.id).await?;
-    sqlx::query("UPDATE flow.workflows SET is_trashed = TRUE, status = 'inactive' WHERE id = $1")
-        .bind(id)
+    let wf = fetch_owned(&state, id, user.id).await?;
+    sqlx::query("DELETE FROM flow.workflows WHERE id = $1 AND owner_id = $2")
+        .bind(id).bind(user.id)
         .execute(&state.db)
         .await?;
+    if let Some(fid) = wf.file_id {
+        if let Err(e) = state.files_client.delete_file(user.id, fid).await {
+            tracing::warn!(workflow_id = %id, file_id = %fid, error = %e,
+                           "Drive: delete_file failed — file left orphaned");
+        }
+    }
     Ok(Json(json!({ "deleted": true })))
 }
 

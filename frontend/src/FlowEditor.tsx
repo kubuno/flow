@@ -1,9 +1,9 @@
+import { useDebouncedAutosave, prompt, useAuthStore } from '@kubuno/sdk'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
-import { useDebouncedAutosave, prompt, useAuthStore } from '@kubuno/sdk'
 import { Plus, Play, Power, History, Workflow as WorkflowIcon, Loader2, KeyRound, StickyNote as StickyNoteIcon, Trash2, Copy, Star, PenLine, Eye, X } from 'lucide-react'
 import { useIsMobile, useSaveShortcut } from '@ui'
 import { flowApi, streamExecution } from './api'
@@ -596,7 +596,7 @@ export default function FlowEditor() {
         {/* Mobile : bascule lecture ↔ édition (pastille « Modifier » en lecture). */}
         {readMobile ? (
           <button onClick={() => setMode('edit')}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-white/15 text-white text-xs font-medium border border-white/25 hover:bg-white/25 transition-colors flex-shrink-0"
+            className="flex items-center gap-1.5 h-8 px-3 rounded-md bg-white/15 text-white text-xs font-medium border border-white/25 hover:bg-white/25 transition-colors flex-shrink-0"
             title={t('edit', { defaultValue: 'Modifier' })}>
             <PenLine size={15} /> {t('edit', { defaultValue: 'Modifier' })}
           </button>

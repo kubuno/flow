@@ -1,3 +1,4 @@
+import { api, useAuthStore } from '@kubuno/sdk'
 // Per-user, backend-persisted module preferences.
 //
 // Stored under `core.users.preferences[<moduleKey>]` (JSONB) via `PATCH /me`.
@@ -7,7 +8,6 @@
 // copied verbatim into every module (modules can't share new SDK code without a
 // republish).
 import { useCallback } from 'react'
-import { api, useAuthStore } from '@kubuno/sdk'
 
 export function useModulePrefs<T extends Record<string, unknown>>(
   moduleKey: string,

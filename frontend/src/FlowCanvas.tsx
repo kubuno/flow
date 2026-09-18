@@ -1,7 +1,7 @@
+import { cn } from '@ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as Icons from 'lucide-react'
-import clsx from 'clsx'
 import { MenuDropdown, useIsMobile, type MenuItem } from '@ui'
 import type { NodeLog, NodeMeta, StickyNote, WorkflowEdge, WorkflowNode } from './types'
 
@@ -755,7 +755,7 @@ export default function FlowCanvas({
     <div
       ref={containerRef}
       data-bg="1"
-      className={clsx('relative w-full h-full overflow-hidden bg-[#f1f3f4]', grabbing ? 'cursor-grabbing' : 'cursor-default')}
+      className={cn('relative w-full h-full overflow-hidden bg-[#f1f3f4]', grabbing ? 'cursor-grabbing' : 'cursor-default')}
       // ⚠️ `touch-action: none` : sans lui le navigateur s'approprie le geste après
       // quelques déplacements (défilement de page) et annule le flux pointeur.
       style={{ touchAction: 'none', backgroundImage: 'radial-gradient(#c4c7cc 1px, transparent 1px)', backgroundSize: `${24 * vp.scale}px ${24 * vp.scale}px`, backgroundPosition: `${vp.tx}px ${vp.ty}px` }}
@@ -927,7 +927,7 @@ export default function FlowCanvas({
             <div
               key={n.id}
               data-node={n.id}
-              className={clsx('absolute select-none', disabled && 'opacity-55')}
+              className={cn('absolute select-none', disabled && 'opacity-55')}
               style={{ left: n.position.x, top: n.position.y, width: w }}
               onPointerEnter={() => setHoverNode(n.id)}
               onPointerLeave={() => setHoverNode(h => h === n.id ? null : h)}
@@ -955,13 +955,13 @@ export default function FlowCanvas({
                 </div>
               )}
 
-              <div className={clsx('border bg-white overflow-hidden transition-shadow duration-150',
+              <div className={cn('border bg-white overflow-hidden transition-shadow duration-150',
                   isTrigger ? 'rounded-r-xl rounded-l-[26px]' : 'rounded-xl',
                   hoverNode === n.id ? 'shadow-xl' : 'shadow-md',
                   disabled ? 'border-dashed border-[#9aa0a6]' : 'border-[#dadce0]', ring)}>
                 {/* En-tête : bande teintée catégorie + tuile icône en dégradé + titre + badges */}
                 <div className="flex items-center gap-2.5 px-2.5 py-2" style={{ background: `${color}14` }}>
-                  <span className={clsx('w-9 h-9 flex items-center justify-center shrink-0 shadow-sm', isTrigger ? 'rounded-full' : 'rounded-[10px]')}
+                  <span className={cn('w-9 h-9 flex items-center justify-center shrink-0 shadow-sm', isTrigger ? 'rounded-full' : 'rounded-[10px]')}
                     style={{ background: `linear-gradient(135deg, ${shade(color, 26)}, ${color} 55%, ${shade(color, -24)})` }}>
                     <LucideIcon name={meta?.icon ?? 'Box'} size={18} color="#fff" />
                   </span>
@@ -986,7 +986,7 @@ export default function FlowCanvas({
                 )}
                 {/* Pied d'exécution : statut + durée + nombre d'éléments */}
                 {log && (
-                  <div className={clsx('flex items-center gap-1.5 px-2.5 py-1 text-[10px] border-t',
+                  <div className={cn('flex items-center gap-1.5 px-2.5 py-1 text-[10px] border-t',
                     log.status === 'success' ? 'bg-green-50 border-green-100 text-green-700' : 'bg-red-50 border-red-100 text-red-700')}>
                     {log.status === 'success' ? <Icons.Check size={11} /> : <Icons.X size={11} />}
                     {log.duration_ms != null && <span>{log.duration_ms} ms</span>}
@@ -1016,7 +1016,7 @@ export default function FlowCanvas({
                 return (
                   <div
                     data-input={n.id}
-                    className={clsx('absolute -left-2 w-3.5 h-3.5 rounded-full border-2 cursor-crosshair shadow-sm',
+                    className={cn('absolute -left-2 w-3.5 h-3.5 rounded-full border-2 cursor-crosshair shadow-sm',
                       connectDrag && connectDrag.source !== n.id ? 'scale-125 border-[#e8824a] bg-[#e8824a]' : !conn && 'bg-white border-[#9aa0a6] hover:border-[#e8824a]')}
                     style={{ top: inPortYAt(n, meta, !!log) - 7, transition: 'transform .1s',
                              ...(conn && !(connectDrag && connectDrag.source !== n.id) ? { background: color, borderColor: '#fff' } : {}) }}
@@ -1034,7 +1034,7 @@ export default function FlowCanvas({
                       </span>
                     )}
                     <div
-                      className={clsx('w-3.5 h-3.5 rounded-full border-2 cursor-crosshair shadow-sm',
+                      className={cn('w-3.5 h-3.5 rounded-full border-2 cursor-crosshair shadow-sm',
                         dragging ? 'border-[#e8824a] bg-[#e8824a]' : !conn && 'bg-white border-[#9aa0a6] hover:border-[#e8824a]')}
                       style={conn && !dragging ? { background: color, borderColor: '#fff' } : undefined}
                       onPointerDown={e => startConnect(e, n.id, port)}
@@ -1065,7 +1065,7 @@ export default function FlowCanvas({
                     <div
                       data-ai-in={`${n.id}|${si.id}|${si.kind}`}
                       onPointerDown={e => startAiFromAgent(e, n.id, si.id, si.kind, n.position.x + px, n.position.y + py)}
-                      className={clsx('w-3 h-3 rotate-45 -translate-x-1/2 -translate-y-1/2 border-2 cursor-crosshair shadow-sm',
+                      className={cn('w-3 h-3 rotate-45 -translate-x-1/2 -translate-y-1/2 border-2 cursor-crosshair shadow-sm',
                         aiDrag?.sub && aiDrag.kind === si.kind ? 'border-[#f1f3f4] bg-[#6750a4] scale-150'
                         : filled ? 'border-white bg-[#6750a4]' : 'bg-white border-[#b3a4d4] hover:border-[#6750a4]')}
                       style={{ transition: 'transform .1s' }}

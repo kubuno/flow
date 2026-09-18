@@ -1926,6 +1926,7 @@ dependencies = [
  "futures",
  "hex",
  "kubuno-drive",
+ "kubuno-modauth",
  "kubuno-seccomp",
  "mail-parser",
  "mongodb",
@@ -1948,6 +1949,20 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "validator",
+]
+
+[[package]]
+name = "kubuno-modauth"
+version = "0.1.0"
+source = "git+https://github.com/kubuno/core?tag=modauth-v0.1.0#4c9618cbd547d5018e7dd1510892f78f2083c910"
+dependencies = [
+ "base64 0.22.1",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "uuid",
 ]
 
 [[package]]
@@ -3470,9 +3485,9 @@ dependencies = [
 
 [[package]]
 name = "spin"
-version = "0.9.8"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 dependencies = [
  "lock_api",
 ]

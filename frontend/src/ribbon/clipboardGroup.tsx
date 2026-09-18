@@ -1,3 +1,4 @@
+import { ModuleServiceRegistry } from '@kubuno/sdk'
 // THE « Presse-papiers » ribbon group — shared by EVERY ribbon editor of Kubuno.
 //
 // Word puts Clipboard first on the Home tab, and so do we: this helper is the
@@ -12,7 +13,6 @@
 // selection when a button is clicked.
 import type { ReactNode, CSSProperties } from 'react'
 import { Scissors, Copy, ClipboardList } from 'lucide-react'
-import { ModuleServiceRegistry } from '@kubuno/sdk'
 import type { RibbonGroup, RibbonItem } from './types'
 
 type TLike = (k: string, o?: Record<string, unknown>) => string
