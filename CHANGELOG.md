@@ -11,6 +11,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Security
 
+- **HTTP/2 layer updated to a patched release.** `h2` moves from 0.4.15 to
+  0.4.19, closing a denial of service through unbounded empty DATA frames
+  (RUSTSEC-2026-0258).
+- **Error library updated to a patched release.** `anyhow` moves from 1.0.102
+  to 1.0.104, closing an unsoundness in `Error::downcast_mut()`
+  (RUSTSEC-2026-0190).
 - **TLS library updated to a patched release.** The pinned `rustls` carried
   RUSTSEC-2026-0285 (medium). Every outbound HTTPS connection goes through it.
 
