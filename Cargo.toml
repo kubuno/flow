@@ -11,7 +11,7 @@ name = "kubuno-flow"
 path = "src/main.rs"
 
 [dependencies]
-kubuno-drive = { git = "https://github.com/kubuno/drive", tag = "drive-v0.1.4", package = "kubuno-drive", default-features = false }
+kubuno-drive = { git = "https://github.com/kubuno/drive", tag = "drive-v0.1.10", package = "kubuno-drive", default-features = false }
 # Workspace shared
 tokio              = { workspace = true }
 axum               = { workspace = true }

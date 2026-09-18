@@ -1892,8 +1892,8 @@ dependencies = [
 
 [[package]]
 name = "kubuno-drive"
-version = "0.1.4"
-source = "git+https://github.com/kubuno/drive?tag=drive-v0.1.4#2433e18a410b94e88696be96044c786de9c06f6c"
+version = "0.1.10"
+source = "git+https://github.com/kubuno/drive?tag=drive-v0.1.10#cccb62ab27c838bfd9139171c1437e0bf7c25ccc"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3843,7 +3843,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
