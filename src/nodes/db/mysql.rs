@@ -90,7 +90,7 @@ impl crate::nodes::trait_::NodeExecutor for MySqlQueryNode {
                 FieldDef::credential("credential", "Credential MySQL", "mysql,mariaDb"),
                 FieldDef::new("connection", "Connexion (DSN, si pas de credential)", FieldType::Expression)
                     .placeholder("mysql://user:mdp@hote:3306/base"),
-                FieldDef::new("query", "Requête SQL", FieldType::Code).required()
+                FieldDef::new("query", "Requête SQL", FieldType::Code).required().literal()
                     .placeholder("SELECT * FROM clients WHERE actif = ?")
                     .help("Paramètres positionnels « ? » liés depuis « Paramètres »."),
                 FieldDef::new("params", "Paramètres (JSON tableau)", FieldType::Json)
@@ -105,13 +105,21 @@ impl crate::nodes::trait_::NodeExecutor for MySqlQueryNode {
         let mut conn = open(&config, n).await?;
 
         if returns_rows(query) {
-            let rows = bind_params(sqlx::query(query), &params).fetch_all(&mut conn).await
+            // Audited: the statement text is the workflow's own `query` field, authored in
+            // the flow configuration by an authenticated owner who is entitled to define it
+            // (this node is a SQL console onto an external database whose DSN that same
+            // owner supplies). Values from `params` are always bound, never interpolated.
+            // CAVEAT: the field is expression-resolved before it reaches here, so a template
+            // like `... WHERE x = '{{ trigger.body.v }}'` splices trigger data into the
+            // statement text. Bind through `params` (`?`) rather than templating.
+            let rows = bind_params(sqlx::query(sqlx::AssertSqlSafe(query)), &params).fetch_all(&mut conn).await
                 .map_err(|e| NodeError::ServiceError(format!("SQL : {e}")))?;
             let out: Vec<Value> = rows.iter().map(row_to_json).collect();
             let count = out.len();
             Ok(NodeOutput::data(json!({ "rows": out, "count": count })))
         } else {
-            let res = bind_params(sqlx::query(query), &params).execute(&mut conn).await
+            // Audited: same owner-authored `query` field as the row-returning branch above.
+            let res = bind_params(sqlx::query(sqlx::AssertSqlSafe(query)), &params).execute(&mut conn).await
                 .map_err(|e| NodeError::ServiceError(format!("SQL : {e}")))?;
             Ok(NodeOutput::data(json!({ "affected": res.rows_affected(), "rows": [] })))
         }

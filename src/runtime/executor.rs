@@ -149,6 +149,7 @@ impl Executor {
             // Résolution des expressions de la config, puis injection des credentials
             // (les champs Credential = id → remplacés par leur payload déchiffré).
             let mut resolved = resolver::resolve_value(&node.config, &exec_ctx.full);
+            resolver::restore_literal_fields(&self.registry, &node.node_type, &node.config, &mut resolved);
             crate::services::credentials::inject_into_config(
                 &self.registry, &self.db, &self.settings.core.internal_secret,
                 owner_id, &node.node_type, &mut resolved,
@@ -454,6 +455,7 @@ pub async fn run_workflow_inline(
             return Err(format!("Type de nœud inconnu : {}", node.node_type));
         };
         let mut resolved = resolver::resolve_value(&node.config, &full);
+        resolver::restore_literal_fields(parent.registry, &node.node_type, &node.config, &mut resolved);
         crate::services::credentials::inject_into_config(
             parent.registry, parent.db, &parent.settings.core.internal_secret,
             owner_id, &node.node_type, &mut resolved,

@@ -22,6 +22,27 @@ pub fn resolve_value(value: &Value, ctx: &Value) -> Value {
     }
 }
 
+/// Puts back, into an already-resolved config, the fields the node declared as
+/// `literal` — their stored text is used exactly as authored.
+///
+/// `resolve_value` walks the whole config and cannot tell an SQL statement from
+/// a label, so the statement is restored here rather than skipped there. See
+/// `FieldDef::literal` for why an SQL statement must never carry expressions.
+pub fn restore_literal_fields(
+    registry: &crate::nodes::NodeRegistry,
+    node_type: &str,
+    raw: &Value,
+    resolved: &mut Value,
+) {
+    let Some(meta) = registry.meta(node_type) else { return };
+    for f in &meta.fields {
+        if !f.literal { continue; }
+        if let Some(original) = raw.get(&f.name) {
+            resolved[&f.name] = original.clone();
+        }
+    }
+}
+
 /// Résout une chaîne. Si la chaîne entière est une unique expression `{{ x }}`,
 /// la valeur typée correspondante est retournée (objet, nombre, booléen…).
 /// Sinon, interpolation textuelle.
@@ -93,5 +114,39 @@ mod tests {
     fn missing_is_null() {
         let ctx = json!({});
         assert_eq!(resolve_string("{{ nope.nope }}", &ctx), Value::Null);
+    }
+
+    /// A webhook-triggered workflow receives its body from whoever calls the
+    /// public URL. If that body could reach the text of an SQL statement, an
+    /// anonymous caller would be writing SQL against the owner's database, so
+    /// the statement must come out exactly as it was authored.
+    #[test]
+    fn sql_statement_is_never_built_from_trigger_data() {
+        let registry = crate::nodes::build_registry();
+        let ctx = json!({ "trigger": { "body": { "email": "x' OR '1'='1" } } });
+        let raw = json!({
+            "query":  "SELECT * FROM clients WHERE email = '{{ trigger.body.email }}'",
+            "params": [],
+            "label":  "Lookup for {{ trigger.body.email }}",
+        });
+
+        let mut resolved = resolve_value(&raw, &ctx);
+        restore_literal_fields(&registry, "db.postgres", &raw, &mut resolved);
+
+        assert_eq!(resolved["query"], raw["query"], "the statement must stay verbatim");
+        // Fields that are not marked literal keep being resolved as before.
+        assert_eq!(resolved["label"], json!("Lookup for x' OR '1'='1"));
+    }
+
+    #[test]
+    fn mysql_statement_is_also_verbatim() {
+        let registry = crate::nodes::build_registry();
+        let ctx = json!({ "trigger": { "body": { "id": "1; DROP TABLE clients" } } });
+        let raw = json!({ "query": "SELECT * FROM t WHERE id = {{ trigger.body.id }}" });
+
+        let mut resolved = resolve_value(&raw, &ctx);
+        restore_literal_fields(&registry, "db.mysql", &raw, &mut resolved);
+
+        assert_eq!(resolved["query"], raw["query"]);
     }
 }

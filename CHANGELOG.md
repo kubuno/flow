@@ -11,6 +11,25 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Security
 
+- **A webhook can no longer be used to rewrite a workflow's SQL.** A workflow
+  that runs a query against an external database can write expressions like
+  `{{ trigger.body.email }}` anywhere in its configuration, and those were
+  expanded in the text of the SQL statement as well. On a workflow started by
+  an incoming webhook — a public address, with no sign-in — the caller supplies
+  that data, so anyone who knew the address could reshape the statement and run
+  their own SQL against the database the workflow's owner had connected. The
+  statement is now used exactly as it was written, and dynamic values go
+  through the query's parameters, as the node's own help already advised. Only
+  workflows that placed an expression inside the SQL text were exposed; those
+  workflows will now run their statement literally and must move the value into
+  the parameters list.
+- **Database driver updated past an unfixable advisory.** The previous line
+  pulled in an RSA implementation vulnerable to a timing side-channel
+  (RUSTSEC-2023-0071) for which no fix will ever exist. The new line does not
+  depend on it at all, and it refuses any SQL string built at run time unless it
+  has been audited — the queries here were checked and marked. The two that
+  carry a workflow's own statement are marked because writing that statement is
+  what the node is for; the fix above is what keeps a caller out of it.
 - **Input validation library updated.** The version in use carried
   RUSTSEC-2024-0421 through its domain-name parser, which accepted Punycode
   labels that decode to plain ASCII — a mismatch an attacker can use to make two

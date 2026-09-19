@@ -102,7 +102,7 @@ impl crate::nodes::trait_::NodeExecutor for PostgresQueryNode {
                 FieldDef::new("connection", "Connexion (DSN, si pas de credential)", FieldType::Expression)
                     .placeholder("postgres://user:mdp@hote:5432/base")
                     .help("Chaîne de connexion d'une base EXTERNE. Astuce : {{ $vars.dbUrl }}."),
-                FieldDef::new("query", "Requête SQL", FieldType::Code).required()
+                FieldDef::new("query", "Requête SQL", FieldType::Code).required().literal()
                     .placeholder("SELECT * FROM clients WHERE actif = $1")
                     .help("Paramètres positionnels $1, $2… liés depuis « Paramètres »."),
                 FieldDef::new("params", "Paramètres (JSON tableau)", FieldType::Json)
@@ -122,7 +122,14 @@ impl crate::nodes::trait_::NodeExecutor for PostgresQueryNode {
         let wrapped = format!(
             "WITH __q AS ({query}) SELECT coalesce(json_agg(__q), '[]'::json)::text AS data FROM __q"
         );
-        let q = bind_params(sqlx::query(&wrapped), &params);
+        // Audited: the statement text is the workflow's own `query` field, authored in
+        // the flow configuration by an authenticated owner who is entitled to define it
+        // (this node is a SQL console onto an external database whose DSN that same
+        // owner supplies). Values from `params` are always bound, never interpolated.
+        // CAVEAT: the field is expression-resolved before it reaches here, so a template
+        // like `... WHERE x = '{{ trigger.body.v }}'` splices trigger data into the
+        // statement text. Bind through `params` ($1, $2…) rather than templating.
+        let q = bind_params(sqlx::query(sqlx::AssertSqlSafe(wrapped)), &params);
         match q.fetch_one(&mut conn).await {
             Ok(row) => {
                 let data: String = row.try_get("data").unwrap_or_else(|_| "[]".into());
@@ -132,7 +139,9 @@ impl crate::nodes::trait_::NodeExecutor for PostgresQueryNode {
             }
             // Pas de RETURNING (mutation simple) → exécuter et renvoyer le nb de lignes affectées.
             Err(e) if e.to_string().contains("does not have a RETURNING") => {
-                let q2 = bind_params(sqlx::query(query), &params);
+                // Audited: same owner-authored `query` field as the wrapped statement
+                // above, re-run unwrapped for statements without RETURNING.
+                let q2 = bind_params(sqlx::query(sqlx::AssertSqlSafe(query)), &params);
                 let res = q2.execute(&mut conn).await
                     .map_err(|e| NodeError::ServiceError(format!("SQL : {e}")))?;
                 Ok(NodeOutput::data(json!({ "affected": res.rows_affected(), "rows": [] })))
@@ -206,7 +215,10 @@ impl crate::nodes::trait_::NodeExecutor for PostgresInsertNode {
         let wrapped = format!("WITH __q AS ({inner}) SELECT coalesce(json_agg(__q), '[]'::json)::text AS data FROM __q");
 
         let mut conn = open(&config, n).await?;
-        let q = bind_params(sqlx::query(&wrapped), &values);
+        // Audited: this node composes the statement itself. Every value is bound as
+        // $n; the only text interpolated is the generated placeholder list and
+        // identifiers escaped by quote_ident (double quotes, `"` doubled).
+        let q = bind_params(sqlx::query(sqlx::AssertSqlSafe(wrapped)), &values);
         let row = q.fetch_one(&mut conn).await
             .map_err(|e| NodeError::ServiceError(format!("SQL : {e}")))?;
         let data: String = row.try_get("data").unwrap_or_else(|_| "[]".into());

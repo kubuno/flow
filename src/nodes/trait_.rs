@@ -64,6 +64,14 @@ pub struct FieldDef {
     /// Pour un champ Credential : types de credential acceptés (séparés par des virgules).
     #[serde(rename = "credentialType", skip_serializing_if = "Option::is_none")]
     pub credential_type: Option<String>,
+    /// Field whose stored value is used verbatim: `{{ ... }}` inside it is NEVER
+    /// expanded. Reserved for values a caller must not be able to reshape, such
+    /// as the text of an SQL statement. Without it, a workflow that templates
+    /// an expression into its SQL would let whoever supplies the trigger data
+    /// — an anonymous caller, on a webhook-triggered workflow — rewrite the
+    /// statement. Dynamic values belong in bound parameters instead.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub literal: bool,
 }
 
 impl FieldDef {
@@ -78,9 +86,12 @@ impl FieldDef {
             default: None,
             options: None,
             credential_type: None,
+            literal: false,
         }
     }
     pub fn required(mut self) -> Self { self.required = true; self }
+    /// Marks the field as verbatim: see `FieldDef::literal`.
+    pub fn literal(mut self) -> Self { self.literal = true; self }
     /// Déclare un champ Credential acceptant les types donnés (ex: "httpBasicAuth,httpHeaderAuth").
     pub fn credential(name: &str, label: &str, types: &str) -> Self {
         let mut f = Self::new(name, label, FieldType::Credential);
