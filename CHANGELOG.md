@@ -23,6 +23,10 @@ number at release time, and CI publishes that section as the GitHub Release note
   workflows that placed an expression inside the SQL text were exposed; those
   workflows will now run their statement literally and must move the value into
   the parameters list.
+- **Concurrency library updated: the last advisory on this module is closed.**
+  `crossbeam-epoch` moves to 0.9.21, fixing an invalid pointer dereference
+  (RUSTSEC-2026-0204) reachable when a stale atomic pointer was formatted for a
+  log line. This module now reports no known vulnerability at all.
 - **Database driver updated past an unfixable advisory.** The previous line
   pulled in an RSA implementation vulnerable to a timing side-channel
   (RUSTSEC-2023-0071) for which no fix will ever exist. The new line does not
