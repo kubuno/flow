@@ -5,6 +5,7 @@
 //!   * an HTTP request built from a URL (HTTP/AI/integration nodes, SSE trigger);
 //!   * a RAW SOCKET opened from a host and a port (database nodes, credential
 //!     connectivity test, IMAP/POP3 email trigger).
+//!
 //! The URL shape used to be the only guarded one, which left every raw socket
 //! free to reach the instance's own database or any service bound on the host.
 //! Both shapes are now judged here, by the same rules, so "internal address"

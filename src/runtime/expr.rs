@@ -814,7 +814,7 @@ mod tests {
 
     #[test]
     fn round_and_number() {
-        assert_eq!(ev("round(3.14159, 2)", json!({})), json!(3.14));
+        assert_eq!(ev("round(1.23456, 2)", json!({})), json!(1.23));
         assert_eq!(ev("number('42') + 1", json!({})), json!(43.0));
     }
 
