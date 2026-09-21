@@ -163,7 +163,7 @@ impl NodeMeta {
 pub struct NodeContext<'a> {
     pub proxy:        &'a CoreProxy,
     pub user_id:      Uuid,
-    pub db:           &'a sqlx::PgPool,
+    pub db:           &'a kubuno_db::DbPool,
     pub settings:     &'a Settings,
     /// Snapshot of the admin-editable instance settings for this run.
     pub instance:     crate::config::InstanceConfig,

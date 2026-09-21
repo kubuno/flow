@@ -9,6 +9,21 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Changed
+
+- **Flow now runs on PostgreSQL, MySQL/MariaDB or SQLite.** The module was tied
+  to PostgreSQL; it now stores its workflows, jobs, executions, logs,
+  credentials and trigger state on whichever database engine the administrator
+  chooses, from the same build. The engine is read from configuration at
+  start-up (`[database] engine = "postgres" | "mysql" | "sqlite"`), and the
+  module creates and migrates its own namespace on first run. Existing
+  PostgreSQL instances are migrated in place — a workflow's tags become a JSON
+  array and an internal timestamp trigger is retired — with no change to stored
+  data or behaviour. On a lightweight single-file (SQLite) or MySQL/MariaDB
+  deployment, the event/form/chat triggers that rely on PostgreSQL's
+  notification bus are inactive; time (cron), e-mail and SSE triggers, and every
+  other feature, work on all three engines.
+
 ### Security
 
 - **A webhook can no longer be used to rewrite a workflow's SQL.** A workflow

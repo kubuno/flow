@@ -4,6 +4,7 @@
 //! contain a `trigger.mcp` node are runnable this way.
 
 use axum::{extract::State, http::HeaderMap, Json};
+use kubuno_db::params;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -34,12 +35,10 @@ pub async fn run(State(state): State<AppState>, headers: HeaderMap, Json(args): 
         .ok_or_else(|| FlowError::Validation("workflow_id requis".into()))?;
     let input = args.get("input").cloned().unwrap_or_else(|| json!({}));
 
-    let row = sqlx::query_as::<_, (Option<Uuid>,)>(
+    let row = state.db.fetch_optional_as::<(Option<Uuid>,)>(
         "SELECT file_id FROM flow.workflows WHERE id = $1 AND owner_id = $2 AND is_trashed = FALSE",
+        params![wf_id, user_id],
     )
-    .bind(wf_id)
-    .bind(user_id)
-    .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| FlowError::NotFound("Workflow introuvable".into()))?;
 

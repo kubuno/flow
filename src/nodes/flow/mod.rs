@@ -1,6 +1,7 @@
 //! Flow-control nodes that operate on other Flow workflows (sub-workflows).
 
 use async_trait::async_trait;
+use kubuno_db::params;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -43,12 +44,10 @@ impl crate::nodes::trait_::NodeExecutor for SubWorkflowNode {
             .map_err(|_| NodeError::InvalidConfig("Identifiant de workflow invalide".into()))?;
 
         // The sub-workflow must belong to the same owner (no cross-user execution).
-        let file_id: Option<Uuid> = sqlx::query_scalar(
+        let (file_id,): (Option<Uuid>,) = n.db.fetch_optional_as::<(Option<Uuid>,)>(
             "SELECT file_id FROM flow.workflows WHERE id = $1 AND owner_id = $2 AND is_trashed = FALSE",
+            params![wf_id, n.user_id],
         )
-        .bind(wf_id)
-        .bind(n.user_id)
-        .fetch_optional(n.db)
         .await
         .map_err(|e| { tracing::error!(error=%e, "Sous-workflow : lecture DB"); NodeError::ServiceError(e.to_string()) })?
         .ok_or_else(|| NodeError::InvalidConfig("Workflow introuvable".into()))?;
@@ -119,12 +118,10 @@ impl crate::nodes::trait_::NodeExecutor for LoopItemsNode {
             return Err(NodeError::InvalidConfig(format!("Trop d'éléments ({}, max {MAX_ITEMS})", items.len())));
         }
 
-        let file_id: Option<Uuid> = sqlx::query_scalar(
+        let (file_id,): (Option<Uuid>,) = n.db.fetch_optional_as::<(Option<Uuid>,)>(
             "SELECT file_id FROM flow.workflows WHERE id = $1 AND owner_id = $2 AND is_trashed = FALSE",
+            params![wf_id, n.user_id],
         )
-        .bind(wf_id)
-        .bind(n.user_id)
-        .fetch_optional(n.db)
         .await
         .map_err(|e| { tracing::error!(error=%e, "Boucle : lecture DB"); NodeError::ServiceError(e.to_string()) })?
         .ok_or_else(|| NodeError::InvalidConfig("Workflow introuvable".into()))?;

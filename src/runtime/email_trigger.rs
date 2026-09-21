@@ -6,6 +6,8 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use kubuno_db::dialect::Assign;
+use kubuno_db::params;
 use mail_parser::MessageParser;
 use native_tls::TlsConnector as NativeTlsConnector;
 use serde_json::{json, Value};
@@ -40,10 +42,10 @@ async fn email_loop(state: AppState) {
     loop {
         tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
 
-        let active = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>)>(
+        let active = state.db.fetch_all_as::<(Uuid, Uuid, Option<Uuid>)>(
             "SELECT id, owner_id, file_id FROM flow.workflows WHERE status = 'active' AND is_trashed = FALSE",
+            params![],
         )
-        .fetch_all(&state.db)
         .await
         .unwrap_or_default();
 
@@ -93,11 +95,11 @@ async fn resolve_cfg(state: &AppState, owner: Uuid, node: &WorkflowNode) -> Resu
 
 async fn poll_one(state: &AppState, wf_id: Uuid, owner: Uuid, node: &WorkflowNode) -> Result<(), String> {
     let cfg = resolve_cfg(state, owner, node).await?;
-    let prev: Option<Value> = sqlx::query_scalar(
+    let prev: Option<Value> = state.db.fetch_optional_scalar::<Value>(
         "SELECT state FROM flow.email_trigger_state WHERE workflow_id = $1 AND node_id = $2",
+        params![wf_id, &node.id],
     )
-    .bind(wf_id).bind(&node.id)
-    .fetch_optional(&state.db).await.map_err(|e| e.to_string())?;
+    .await.map_err(|e| e.to_string())?;
 
     let (messages, new_state) = if cfg.protocol == "pop3" {
         let seen: Vec<String> = prev.as_ref().and_then(|s| s.get("seen")).and_then(|v| v.as_array())
@@ -116,13 +118,19 @@ async fn poll_one(state: &AppState, wf_id: Uuid, owner: Uuid, node: &WorkflowNod
         let _ = queue::enqueue(&state.db, wf_id, owner, "email", trigger_data, state.instance().max_retries).await;
     }
 
-    sqlx::query(
-        r#"INSERT INTO flow.email_trigger_state (workflow_id, node_id, state, updated_at)
-           VALUES ($1, $2, $3, NOW())
-           ON CONFLICT (workflow_id, node_id) DO UPDATE SET state = $3, updated_at = NOW()"#,
-    )
-    .bind(wf_id).bind(&node.id).bind(&new_state)
-    .execute(&state.db).await.map_err(|e| e.to_string())?;
+    // Portable upsert: each value binds a fresh placeholder ($3 is not reused),
+    // and the ON CONFLICT / ON DUPLICATE KEY clause is spelled per engine.
+    let conflict = state.db.backend().upsert(
+        "flow.email_trigger_state",
+        &["workflow_id", "node_id"],
+        &[Assign::Incoming("state"), Assign::Incoming("updated_at")],
+    );
+    let sql = format!(
+        "INSERT INTO flow.email_trigger_state (workflow_id, node_id, state, updated_at) \
+         VALUES ($1, $2, $3, $4){conflict}"
+    );
+    state.db.execute(&sql, params![wf_id, &node.id, new_state, chrono::Utc::now()])
+        .await.map_err(|e| e.to_string())?;
     Ok(())
 }
 

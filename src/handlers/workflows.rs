@@ -2,6 +2,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use kubuno_db::{new_id, params};
 use serde_json::{json, Value};
 use uuid::Uuid;
 use validator::Validate;
@@ -30,14 +31,12 @@ pub async fn list(
     user: FlowUserExt,
     axum::extract::Query(q): axum::extract::Query<ListQuery>,
 ) -> Result<Json<Vec<Workflow>>> {
-    let mut workflows = sqlx::query_as::<_, Workflow>(
-        r#"SELECT * FROM flow.workflows
-           WHERE owner_id = $1 AND is_trashed = $2
-           ORDER BY updated_at DESC"#,
+    let mut workflows = state.db.fetch_all_as::<Workflow>(
+        "SELECT * FROM flow.workflows \
+           WHERE owner_id = $1 AND is_trashed = $2 \
+           ORDER BY updated_at DESC",
+        params![user.id, q.trashed.unwrap_or(false)],
     )
-    .bind(user.id)
-    .bind(q.trashed.unwrap_or(false))
-    .fetch_all(&state.db)
     .await?;
     for wf in &mut workflows {
         wf.definition = cf::empty_definition();
@@ -54,11 +53,10 @@ pub(crate) async fn enforce_workflow_quota(state: &AppState, owner: Uuid) -> Res
     if max <= 0 {
         return Ok(());
     }
-    let owned = sqlx::query_scalar::<_, i64>(
+    let owned = state.db.fetch_scalar::<i64>(
         "SELECT COUNT(*) FROM flow.workflows WHERE owner_id = $1 AND is_trashed = FALSE",
+        params![owner],
     )
-    .bind(owner)
-    .fetch_one(&state.db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, owner = %owner, "Comptage des workflows pour le quota");
@@ -88,29 +86,29 @@ pub async fn create(
     // Définition → fichier .kbflw (dossier protégé Flow/).
     let file_id = cf::create_workflow_file(&state, user.id, &dto.name, definition.clone()).await?;
 
-    let mut wf = sqlx::query_as::<_, Workflow>(
-        r#"INSERT INTO flow.workflows (owner_id, name, description, file_id, tags)
-           VALUES ($1, $2, $3, $4, $5) RETURNING *"#,
+    // id minté en Rust + relecture (MySQL n'a pas de RETURNING). tags est lié
+    // explicitement (NOT NULL, sans défaut sur MySQL/SQLite).
+    let id = new_id();
+    let now = chrono::Utc::now();
+    state.db.execute(
+        "INSERT INTO flow.workflows (id, owner_id, name, description, file_id, tags, created_at, updated_at) \
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        params![id, user.id, &dto.name, dto.description.as_deref(), file_id, &tags, now, now],
     )
-    .bind(user.id)
-    .bind(&dto.name)
-    .bind(dto.description.as_deref())
-    .bind(file_id)
-    .bind(&tags)
-    .fetch_one(&state.db)
     .await?;
+    let mut wf = fetch_owned(&state, id, user.id).await?;
     wf.definition = definition;
     Ok(Json(wf))
 }
 
 /// Charge un workflow possédé, sans peupler la définition (métadonnée seule).
 async fn fetch_owned(state: &AppState, id: Uuid, owner: Uuid) -> Result<Workflow> {
-    sqlx::query_as::<_, Workflow>("SELECT * FROM flow.workflows WHERE id = $1 AND owner_id = $2")
-        .bind(id)
-        .bind(owner)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(|| FlowError::NotFound("Workflow introuvable".into()))
+    state.db.fetch_optional_as::<Workflow>(
+        "SELECT * FROM flow.workflows WHERE id = $1 AND owner_id = $2",
+        params![id, owner],
+    )
+    .await?
+    .ok_or_else(|| FlowError::NotFound("Workflow introuvable".into()))
 }
 
 /// Charge un workflow possédé en peuplant la définition depuis le fichier .kbflw.
@@ -135,8 +133,10 @@ pub async fn get(
         if let Some(fname) = cf::file_name(&state, user.id, fid).await {
             let stem = cf::strip_ext(&fname);
             if !stem.is_empty() && stem != wf.name {
-                sqlx::query("UPDATE flow.workflows SET name = $2 WHERE id = $1")
-                    .bind(id).bind(&stem).execute(&state.db).await?;
+                state.db.execute(
+                    "UPDATE flow.workflows SET name = $1, updated_at = $2 WHERE id = $3",
+                    params![&stem, chrono::Utc::now(), id],
+                ).await?;
                 wf.name = stem;
             }
         }
@@ -155,11 +155,11 @@ pub async fn open_by_file(
     user: FlowUserExt,
     Json(dto): Json<OpenByFileDto>,
 ) -> Result<Json<Workflow>> {
-    let id = sqlx::query_scalar::<_, Uuid>(
+    let id = state.db.fetch_optional_scalar::<Uuid>(
         "SELECT id FROM flow.workflows WHERE file_id = $1 AND owner_id = $2",
+        params![dto.file_id, user.id],
     )
-    .bind(dto.file_id).bind(user.id)
-    .fetch_optional(&state.db).await?
+    .await?
     .ok_or_else(|| FlowError::NotFound("Aucun workflow lié à ce fichier".into()))?;
 
     Ok(Json(fetch_owned_full(&state, id, user.id).await?))
@@ -207,20 +207,17 @@ pub async fn update(
         },
     };
 
-    let mut wf = sqlx::query_as::<_, Workflow>(
-        r#"UPDATE flow.workflows SET
-            name = $2, description = $3, file_id = $4, tags = $5, status = $6, is_starred = $7
-           WHERE id = $1 RETURNING *"#,
+    state.db.execute(
+        "UPDATE flow.workflows SET \
+            name = $1, description = $2, file_id = $3, tags = $4, status = $5, is_starred = $6, updated_at = $7 \
+           WHERE id = $8 AND owner_id = $9",
+        params![
+            &name, description.as_deref(), file_id, &tags, &status, is_starred,
+            chrono::Utc::now(), id, user.id
+        ],
     )
-    .bind(id)
-    .bind(&name)
-    .bind(description.as_deref())
-    .bind(file_id)
-    .bind(&tags)
-    .bind(&status)
-    .bind(is_starred)
-    .fetch_one(&state.db)
     .await?;
+    let mut wf = fetch_owned(&state, id, user.id).await?;
     wf.definition = definition;
 
     // Nom modifié → renommer le fichier .kbflw (nom = nom du fichier). Best-effort.
@@ -244,10 +241,11 @@ pub async fn delete(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     let wf = fetch_owned(&state, id, user.id).await?;
-    sqlx::query("DELETE FROM flow.workflows WHERE id = $1 AND owner_id = $2")
-        .bind(id).bind(user.id)
-        .execute(&state.db)
-        .await?;
+    state.db.execute(
+        "DELETE FROM flow.workflows WHERE id = $1 AND owner_id = $2",
+        params![id, user.id],
+    )
+    .await?;
     if let Some(fid) = wf.file_id {
         if let Err(e) = state.files_client.delete_file(user.id, fid).await {
             tracing::warn!(workflow_id = %id, file_id = %fid, error = %e,
@@ -264,12 +262,12 @@ pub async fn activate(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Workflow>> {
     fetch_owned(&state, id, user.id).await?;
-    let wf = sqlx::query_as::<_, Workflow>(
-        "UPDATE flow.workflows SET status = 'active' WHERE id = $1 RETURNING *",
+    state.db.execute(
+        "UPDATE flow.workflows SET status = 'active', updated_at = $1 WHERE id = $2 AND owner_id = $3",
+        params![chrono::Utc::now(), id, user.id],
     )
-    .bind(id)
-    .fetch_one(&state.db)
     .await?;
+    let wf = fetch_owned(&state, id, user.id).await?;
     Ok(Json(wf))
 }
 
@@ -280,12 +278,12 @@ pub async fn deactivate(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Workflow>> {
     fetch_owned(&state, id, user.id).await?;
-    let wf = sqlx::query_as::<_, Workflow>(
-        "UPDATE flow.workflows SET status = 'inactive' WHERE id = $1 RETURNING *",
+    state.db.execute(
+        "UPDATE flow.workflows SET status = 'inactive', updated_at = $1 WHERE id = $2 AND owner_id = $3",
+        params![chrono::Utc::now(), id, user.id],
     )
-    .bind(id)
-    .fetch_one(&state.db)
     .await?;
+    let wf = fetch_owned(&state, id, user.id).await?;
     Ok(Json(wf))
 }
 
@@ -300,17 +298,15 @@ pub async fn duplicate(
     let new_name = format!("{} (copie)", src.name);
     let new_file_id = cf::create_workflow_file(&state, user.id, &new_name, src.definition.clone()).await?;
 
-    let mut wf = sqlx::query_as::<_, Workflow>(
-        r#"INSERT INTO flow.workflows (owner_id, name, description, file_id, tags)
-           VALUES ($1, $2, $3, $4, $5) RETURNING *"#,
+    let id = new_id();
+    let now = chrono::Utc::now();
+    state.db.execute(
+        "INSERT INTO flow.workflows (id, owner_id, name, description, file_id, tags, created_at, updated_at) \
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        params![id, user.id, &new_name, src.description.as_deref(), new_file_id, &src.tags, now, now],
     )
-    .bind(user.id)
-    .bind(&new_name)
-    .bind(src.description.as_deref())
-    .bind(new_file_id)
-    .bind(&src.tags)
-    .fetch_one(&state.db)
     .await?;
+    let mut wf = fetch_owned(&state, id, user.id).await?;
     wf.definition = src.definition;
     Ok(Json(wf))
 }

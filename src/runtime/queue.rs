@@ -1,8 +1,13 @@
-//! File de jobs PostgreSQL avec `FOR UPDATE SKIP LOCKED`.
+//! Portable job queue. The claim is a conditional UPDATE whose `rows_affected`
+//! is the proof of ownership, not `FOR UPDATE SKIP LOCKED`: neither SQLite nor
+//! MariaDB offers `SKIP LOCKED`, and a lock taken outside a transaction
+//! guarantees nothing anyway. Each candidate is claimed on its own; exactly one
+//! worker can see the UPDATE change one row.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use kubuno_db::{new_id, params, DbPool};
 use serde_json::Value;
-use sqlx::{FromRow, PgPool};
+use sqlx::FromRow;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, FromRow)]
@@ -26,117 +31,116 @@ pub struct Job {
 
 /// Insère un nouveau job dans la file.
 pub async fn enqueue(
-    db:             &PgPool,
+    db:             &DbPool,
     workflow_id:    Uuid,
     owner_id:       Uuid,
     trigger_source: &str,
     trigger_data:   Value,
     max_attempts:   i32,
 ) -> Result<Uuid, sqlx::Error> {
-    let id: Uuid = sqlx::query_scalar(
-        r#"
-        INSERT INTO flow.jobs (workflow_id, owner_id, trigger_source, trigger_data, max_attempts)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id
-        "#,
+    // The id is minted here, not by the database: MySQL/SQLite have no server
+    // UUID default and no RETURNING (see kubuno_db::new_id). Other columns take
+    // their table defaults (status='pending', priority, attempt, scheduled_at…).
+    let id = new_id();
+    db.execute(
+        "INSERT INTO flow.jobs (id, workflow_id, owner_id, trigger_source, trigger_data, max_attempts) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+        params![id, workflow_id, owner_id, trigger_source, trigger_data, max_attempts],
     )
-    .bind(workflow_id)
-    .bind(owner_id)
-    .bind(trigger_source)
-    .bind(trigger_data)
-    .bind(max_attempts)
-    .fetch_one(db)
     .await?;
     Ok(id)
 }
 
-/// Réclame un lot de jobs prêts, en les marquant `running` de façon atomique.
-/// Utilise SKIP LOCKED pour permettre plusieurs workers concurrents sans doublons.
+/// Réclame un lot de jobs prêts, en les marquant `running` un par un. La preuve
+/// de possession = l'UPDATE conditionnel qui ne touche qu'un job encore
+/// `pending` (portable, sans SKIP LOCKED).
 pub async fn claim_batch(
-    db:        &PgPool,
+    db:        &DbPool,
     worker_id: &str,
     batch:     i64,
 ) -> Result<Vec<Job>, sqlx::Error> {
-    let jobs = sqlx::query_as::<_, Job>(
-        r#"
-        UPDATE flow.jobs SET
-            status     = 'running',
-            started_at = NOW(),
-            worker_id  = $1,
-            attempt    = attempt + 1
-        WHERE id IN (
-            SELECT id FROM flow.jobs
-            WHERE status = 'pending' AND scheduled_at <= NOW()
-            ORDER BY priority ASC, scheduled_at ASC
-            FOR UPDATE SKIP LOCKED
-            LIMIT $2
+    let now = Utc::now();
+
+    // Candidates: ready, pending, highest priority (lowest number) first.
+    let candidates: Vec<(Uuid,)> = db
+        .fetch_all_as::<(Uuid,)>(
+            "SELECT id FROM flow.jobs \
+             WHERE status = 'pending' AND scheduled_at <= $1 \
+             ORDER BY priority ASC, scheduled_at ASC \
+             LIMIT $2",
+            params![now, batch],
         )
-        RETURNING *
-        "#,
-    )
-    .bind(worker_id)
-    .bind(batch)
-    .fetch_all(db)
-    .await?;
-    Ok(jobs)
+        .await?;
+
+    let mut claimed = Vec::new();
+    for (id,) in candidates {
+        // One statement both claims the job and stamps it running: the row count
+        // it changed IS the proof of ownership, so only one worker keeps it.
+        let won = db
+            .execute(
+                "UPDATE flow.jobs SET \
+                    status = 'running', started_at = $1, worker_id = $2, attempt = attempt + 1 \
+                 WHERE id = $3 AND status = 'pending'",
+                params![now, worker_id, id],
+            )
+            .await?;
+        if won == 1 {
+            if let Some(job) = db
+                .fetch_optional_as::<Job>("SELECT * FROM flow.jobs WHERE id = $1", params![id])
+                .await?
+            {
+                claimed.push(job);
+            }
+        }
+    }
+    Ok(claimed)
 }
 
-pub async fn mark_done(db: &PgPool, job_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE flow.jobs SET status = 'done', finished_at = NOW() WHERE id = $1")
-        .bind(job_id)
-        .execute(db)
-        .await?;
+pub async fn mark_done(db: &DbPool, job_id: Uuid) -> Result<(), sqlx::Error> {
+    db.execute(
+        "UPDATE flow.jobs SET status = 'done', finished_at = $1 WHERE id = $2",
+        params![Utc::now(), job_id],
+    )
+    .await?;
     Ok(())
 }
 
 /// Marque le job en échec définitif (plus de tentatives).
-pub async fn mark_failed(db: &PgPool, job_id: Uuid, error: &str) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "UPDATE flow.jobs SET status = 'failed', finished_at = NOW(), last_error = $2 WHERE id = $1",
+pub async fn mark_failed(db: &DbPool, job_id: Uuid, error: &str) -> Result<(), sqlx::Error> {
+    db.execute(
+        "UPDATE flow.jobs SET status = 'failed', finished_at = $1, last_error = $2 WHERE id = $3",
+        params![Utc::now(), error, job_id],
     )
-    .bind(job_id)
-    .bind(error)
-    .execute(db)
     .await?;
     Ok(())
 }
 
-/// Replanifie le job pour une nouvelle tentative (retry).
+/// Replanifie le job pour une nouvelle tentative (retry). Le délai est appliqué
+/// en Rust (pas d'arithmétique d'intervalle SQL, qui diffère par moteur).
 pub async fn reschedule(
-    db:           &PgPool,
-    job_id:       Uuid,
-    delay_secs:   i64,
-    error:        &str,
+    db:         &DbPool,
+    job_id:     Uuid,
+    delay_secs: i64,
+    error:      &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        UPDATE flow.jobs SET
-            status       = 'pending',
-            scheduled_at = NOW() + ($2 || ' seconds')::interval,
-            last_error   = $3,
-            worker_id    = NULL
-        WHERE id = $1
-        "#,
+    let scheduled_at = Utc::now() + ChronoDuration::seconds(delay_secs.max(0));
+    db.execute(
+        "UPDATE flow.jobs SET status = 'pending', scheduled_at = $1, last_error = $2, worker_id = NULL \
+         WHERE id = $3",
+        params![scheduled_at, error, job_id],
     )
-    .bind(job_id)
-    .bind(delay_secs.to_string())
-    .bind(error)
-    .execute(db)
     .await?;
     Ok(())
 }
 
-/// Re-met en `pending` les jobs `running` orphelins (worker crashé) plus vieux que `stale_secs`.
-pub async fn requeue_stale(db: &PgPool, stale_secs: i64) -> Result<u64, sqlx::Error> {
-    let res = sqlx::query(
-        r#"
-        UPDATE flow.jobs SET status = 'pending', worker_id = NULL
-        WHERE status = 'running'
-          AND started_at < NOW() - ($1 || ' seconds')::interval
-        "#,
+/// Re-met en `pending` les jobs `running` orphelins (worker crashé) plus vieux
+/// que `stale_secs`. Le seuil temporel est calculé en Rust.
+pub async fn requeue_stale(db: &DbPool, stale_secs: i64) -> Result<u64, sqlx::Error> {
+    let cutoff = Utc::now() - ChronoDuration::seconds(stale_secs.max(0));
+    db.execute(
+        "UPDATE flow.jobs SET status = 'pending', worker_id = NULL \
+         WHERE status = 'running' AND started_at < $1",
+        params![cutoff],
     )
-    .bind(stale_secs.to_string())
-    .execute(db)
-    .await?;
-    Ok(res.rows_affected())
+    .await
 }

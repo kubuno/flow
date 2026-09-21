@@ -2,6 +2,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
+use kubuno_db::params;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -29,16 +30,12 @@ pub async fn list_for_workflow(
     Path(id): Path<Uuid>,
     Query(p): Query<ListParams>,
 ) -> Result<Json<Vec<Execution>>> {
-    let execs = sqlx::query_as::<_, Execution>(
-        r#"SELECT * FROM flow.executions
-           WHERE workflow_id = $1 AND owner_id = $2
-           ORDER BY started_at DESC LIMIT $3 OFFSET $4"#,
+    let execs = state.db.fetch_all_as::<Execution>(
+        "SELECT * FROM flow.executions \
+           WHERE workflow_id = $1 AND owner_id = $2 \
+           ORDER BY started_at DESC LIMIT $3 OFFSET $4",
+        params![id, user.id, p.limit.clamp(1, 200), p.offset.max(0)],
     )
-    .bind(id)
-    .bind(user.id)
-    .bind(p.limit.clamp(1, 200))
-    .bind(p.offset.max(0))
-    .fetch_all(&state.db)
     .await?;
     Ok(Json(execs))
 }
@@ -49,20 +46,17 @@ pub async fn detail(
     user: FlowUserExt,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
-    let exec = sqlx::query_as::<_, Execution>(
+    let exec = state.db.fetch_optional_as::<Execution>(
         "SELECT * FROM flow.executions WHERE id = $1 AND owner_id = $2",
+        params![id, user.id],
     )
-    .bind(id)
-    .bind(user.id)
-    .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| FlowError::NotFound("Exécution introuvable".into()))?;
 
-    let logs = sqlx::query_as::<_, NodeLog>(
+    let logs = state.db.fetch_all_as::<NodeLog>(
         "SELECT * FROM flow.node_logs WHERE execution_id = $1 ORDER BY executed_at ASC",
+        params![id],
     )
-    .bind(id)
-    .fetch_all(&state.db)
     .await?;
 
     Ok(Json(json!({ "execution": exec, "node_logs": logs })))
@@ -74,12 +68,12 @@ pub async fn delete(
     user: FlowUserExt,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
-    let res = sqlx::query("DELETE FROM flow.executions WHERE id = $1 AND owner_id = $2")
-        .bind(id)
-        .bind(user.id)
-        .execute(&state.db)
-        .await?;
-    if res.rows_affected() == 0 {
+    let affected = state.db.execute(
+        "DELETE FROM flow.executions WHERE id = $1 AND owner_id = $2",
+        params![id, user.id],
+    )
+    .await?;
+    if affected == 0 {
         return Err(FlowError::NotFound("Exécution introuvable".into()));
     }
     Ok(Json(json!({ "deleted": true })))

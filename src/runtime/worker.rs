@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use kubuno_db::{new_id, params};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -61,11 +62,10 @@ async fn worker_loop(state: AppState, worker_id: String) {
 
 async fn process_job(state: &AppState, job: queue::Job) {
     // Charger la référence du fichier de définition (.kbflw).
-    let row = sqlx::query_as::<_, (Option<Uuid>,)>(
+    let row = state.db.fetch_optional_as::<(Option<Uuid>,)>(
         "SELECT file_id FROM flow.workflows WHERE id = $1",
+        params![job.workflow_id],
     )
-    .bind(job.workflow_id)
-    .fetch_optional(&state.db)
     .await;
 
     let file_id = match row {
@@ -93,28 +93,23 @@ async fn process_job(state: &AppState, job: queue::Job) {
     };
     let definition = WorkflowDefinition::from_value(&definition_value);
 
-    // Créer la ligne d'exécution.
-    let execution_id: Uuid = match sqlx::query_scalar(
-        r#"INSERT INTO flow.executions
-            (job_id, workflow_id, owner_id, status, trigger_source, trigger_data, nodes_total)
-           VALUES ($1,$2,$3,'running',$4,$5,$6) RETURNING id"#,
+    // Créer la ligne d'exécution (id minté en Rust, pas de RETURNING).
+    let execution_id = new_id();
+    if let Err(e) = state.db.execute(
+        "INSERT INTO flow.executions \
+            (id, job_id, workflow_id, owner_id, status, trigger_source, trigger_data, nodes_total) \
+           VALUES ($1,$2,$3,$4,'running',$5,$6,$7)",
+        params![
+            execution_id, job.id, job.workflow_id, job.owner_id,
+            &job.trigger_source, job.trigger_data.clone(), definition.nodes.len() as i32
+        ],
     )
-    .bind(job.id)
-    .bind(job.workflow_id)
-    .bind(job.owner_id)
-    .bind(&job.trigger_source)
-    .bind(&job.trigger_data)
-    .bind(definition.nodes.len() as i32)
-    .fetch_one(&state.db)
     .await
     {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::error!(error = %e, "Création execution échouée");
-            let _ = queue::reschedule(&state.db, job.id, 30, "Erreur DB").await;
-            return;
-        }
-    };
+        tracing::error!(error = %e, "Création execution échouée");
+        let _ = queue::reschedule(&state.db, job.id, 30, "Erreur DB").await;
+        return;
+    }
 
     let executor = Executor {
         db:           state.db.clone(),
@@ -142,12 +137,14 @@ async fn process_job(state: &AppState, job: queue::Job) {
     match outcome.status {
         "success" => {
             let _ = queue::mark_done(&state.db, job.id).await;
-            let _ = sqlx::query(
-                r#"UPDATE flow.workflows SET
-                    execution_count = execution_count + 1,
-                    last_executed_at = NOW(), last_error = NULL
-                   WHERE id = $1"#,
-            ).bind(job.workflow_id).execute(&state.db).await;
+            let now = chrono::Utc::now();
+            let _ = state.db.execute(
+                "UPDATE flow.workflows SET \
+                    execution_count = execution_count + 1, \
+                    last_executed_at = $1, last_error = NULL, updated_at = $2 \
+                   WHERE id = $3",
+                params![now, now, job.workflow_id],
+            ).await;
             publish_workflow_event(state, "WorkflowExecuted", job.workflow_id, job.owner_id, None).await;
         }
         _ => {
@@ -158,20 +155,24 @@ async fn process_job(state: &AppState, job: queue::Job) {
                 tracing::warn!(job = %job.id, attempt = job.attempt, "Job replanifié (retry)");
             } else {
                 let _ = queue::mark_failed(&state.db, job.id, &err).await;
-                let _ = sqlx::query(
-                    r#"UPDATE flow.workflows SET
-                        execution_count = execution_count + 1,
-                        error_count = error_count + 1,
-                        last_executed_at = NOW(), last_error = $2
-                       WHERE id = $1"#,
-                ).bind(job.workflow_id).bind(&err).execute(&state.db).await;
+                let now = chrono::Utc::now();
+                let _ = state.db.execute(
+                    "UPDATE flow.workflows SET \
+                        execution_count = execution_count + 1, \
+                        error_count = error_count + 1, \
+                        last_executed_at = $1, last_error = $2, updated_at = $3 \
+                       WHERE id = $4",
+                    params![now, &err, now, job.workflow_id],
+                ).await;
                 publish_workflow_event(state, "WorkflowFailed", job.workflow_id, job.owner_id, Some(&err)).await;
 
                 // Déclencheur d'erreur : démarre les workflows « trigger.error » de l'utilisateur
                 // (sauf si CET échec provient déjà d'un workflow d'erreur → pas de boucle).
                 if job.trigger_source != "error" {
-                    let wf_name = sqlx::query_scalar::<_, String>("SELECT name FROM flow.workflows WHERE id = $1")
-                        .bind(job.workflow_id).fetch_optional(&state.db).await.ok().flatten().unwrap_or_default();
+                    let wf_name = state.db.fetch_optional_scalar::<String>(
+                        "SELECT name FROM flow.workflows WHERE id = $1",
+                        params![job.workflow_id],
+                    ).await.ok().flatten().unwrap_or_default();
                     crate::runtime::scheduler::dispatch_error_workflows(
                         state, job.workflow_id, &wf_name, job.owner_id, execution_id, &err,
                     ).await;
@@ -186,16 +187,20 @@ async fn process_job(state: &AppState, job: queue::Job) {
 
 async fn prune_history(state: &AppState, workflow_id: Uuid) {
     let keep = state.instance().max_execution_history;
-    let _ = sqlx::query(
-        r#"DELETE FROM flow.executions
-           WHERE workflow_id = $1 AND id NOT IN (
-               SELECT id FROM flow.executions WHERE workflow_id = $1
-               ORDER BY started_at DESC LIMIT $2
-           )"#,
+    // The kept-rows subquery is wrapped in a derived table: MySQL forbids
+    // referencing the DELETE's target table directly in a subquery, and the
+    // wrapped form is valid on all three engines. Placeholders are bound once
+    // each, in order (the rewriter forbids reusing $n).
+    let _ = state.db.execute(
+        "DELETE FROM flow.executions \
+           WHERE workflow_id = $1 AND id NOT IN ( \
+               SELECT id FROM ( \
+                   SELECT id FROM flow.executions WHERE workflow_id = $2 \
+                   ORDER BY started_at DESC LIMIT $3 \
+               ) AS keep \
+           )",
+        params![workflow_id, workflow_id, keep],
     )
-    .bind(workflow_id)
-    .bind(keep)
-    .execute(&state.db)
     .await;
 }
 

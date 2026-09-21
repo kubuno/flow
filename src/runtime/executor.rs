@@ -4,8 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use kubuno_db::{new_id, params, DbPool};
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::config::Settings;
@@ -16,7 +16,7 @@ use crate::runtime::core_proxy::CoreProxy;
 use crate::runtime::resolver;
 
 pub struct Executor {
-    pub db:           PgPool,
+    pub db:           DbPool,
     pub registry:     Arc<NodeRegistry>,
     pub proxy:        Arc<CoreProxy>,
     pub settings:     Arc<Settings>,
@@ -253,24 +253,17 @@ impl Executor {
         attempt:      i32,
         dur:          Duration,
     ) {
-        let res = sqlx::query(
-            r#"INSERT INTO flow.node_logs
-                (execution_id, node_id, node_type, node_name, status, input_data, output_data,
-                 error_message, error_stack, duration_ms, attempt)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)"#,
+        let res = self.db.execute(
+            "INSERT INTO flow.node_logs \
+                (id, execution_id, node_id, node_type, node_name, status, input_data, output_data, \
+                 error_message, error_stack, duration_ms, attempt) \
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+            params![
+                new_id(), execution_id, &node.id, &node.node_type, node.name.as_deref(),
+                status, input.cloned(), output.cloned(), error, stack,
+                dur.as_millis() as i32, attempt
+            ],
         )
-        .bind(execution_id)
-        .bind(&node.id)
-        .bind(&node.node_type)
-        .bind(node.name.as_deref())
-        .bind(status)
-        .bind(input.cloned())
-        .bind(output.cloned())
-        .bind(error)
-        .bind(stack)
-        .bind(dur.as_millis() as i32)
-        .bind(attempt)
-        .execute(&self.db)
         .await;
         if let Err(e) = res {
             tracing::error!(error = %e, "Insertion node_log échouée");
@@ -287,19 +280,13 @@ impl Executor {
         start:        Instant,
     ) {
         let dur = start.elapsed().as_millis() as i32;
-        let res = sqlx::query(
-            r#"UPDATE flow.executions SET
-                status = $2, nodes_executed = $3, nodes_total = $4,
-                error_message = $5, duration_ms = $6, finished_at = NOW()
-               WHERE id = $1"#,
+        let res = self.db.execute(
+            "UPDATE flow.executions SET \
+                status = $1, nodes_executed = $2, nodes_total = $3, \
+                error_message = $4, duration_ms = $5, finished_at = $6 \
+               WHERE id = $7",
+            params![status, executed, total, error, dur, chrono::Utc::now(), execution_id],
         )
-        .bind(execution_id)
-        .bind(status)
-        .bind(executed)
-        .bind(total)
-        .bind(error)
-        .bind(dur)
-        .execute(&self.db)
         .await;
         if let Err(e) = res {
             tracing::error!(error = %e, "Finalisation execution échouée");

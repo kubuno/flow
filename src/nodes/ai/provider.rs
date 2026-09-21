@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 
+use kubuno_db::dialect::Assign;
+use kubuno_db::params;
 use reqwest::Method;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -283,9 +285,10 @@ async fn run_tool(n: &NodeContext<'_>, ctx: &ExecutionContext, tool: &Value, arg
         "ai.tool.workflow" => {
             let wf = cfg.get("workflow_id").and_then(|v| v.as_str()).ok_or("workflow_id manquant")?;
             let wf_id = Uuid::parse_str(wf.trim()).map_err(|_| "workflow_id invalide".to_string())?;
-            let file_id: Option<Uuid> = sqlx::query_scalar(
+            let (file_id,): (Option<Uuid>,) = n.db.fetch_optional_as::<(Option<Uuid>,)>(
                 "SELECT file_id FROM flow.workflows WHERE id = $1 AND owner_id = $2 AND is_trashed = FALSE",
-            ).bind(wf_id).bind(n.user_id).fetch_optional(n.db).await.map_err(|e| e.to_string())?
+                params![wf_id, n.user_id],
+            ).await.map_err(|e| e.to_string())?
              .ok_or("workflow introuvable")?;
             let def_val = match file_id {
                 Some(fid) => {
@@ -306,8 +309,10 @@ async fn run_tool(n: &NodeContext<'_>, ctx: &ExecutionContext, tool: &Value, arg
 // ── Mémoire ──────────────────────────────────────────────────────────────────────
 
 async fn load_memory(n: &NodeContext<'_>, wf: Uuid, session: &str) -> Vec<(String, String)> {
-    let row: Option<Value> = sqlx::query_scalar("SELECT messages FROM flow.ai_memory WHERE workflow_id = $1 AND session_key = $2")
-        .bind(wf).bind(session).fetch_optional(n.db).await.ok().flatten();
+    let row: Option<Value> = n.db.fetch_optional_scalar::<Value>(
+        "SELECT messages FROM flow.ai_memory WHERE workflow_id = $1 AND session_key = $2",
+        params![wf, session],
+    ).await.ok().flatten();
     row.and_then(|v| v.as_array().map(|a| a.iter().filter_map(|m| {
         Some((m.get("role")?.as_str()?.to_string(), m.get("content")?.as_str()?.to_string()))
     }).collect())).unwrap_or_default()
@@ -320,10 +325,17 @@ async fn save_memory(n: &NodeContext<'_>, wf: Uuid, session: &str, user: &str, a
     let max = (window as usize) * 2;
     if msgs.len() > max { msgs = msgs.split_off(msgs.len() - max); }
     let json_msgs = Value::Array(msgs.into_iter().map(|(r, c)| json!({ "role": r, "content": c })).collect());
-    let _ = sqlx::query(
-        r#"INSERT INTO flow.ai_memory (workflow_id, session_key, messages, updated_at) VALUES ($1,$2,$3,NOW())
-           ON CONFLICT (workflow_id, session_key) DO UPDATE SET messages = $3, updated_at = NOW()"#,
-    ).bind(wf).bind(session).bind(&json_msgs).execute(n.db).await;
+    // Portable upsert (no reused $3; per-engine ON CONFLICT / ON DUPLICATE KEY).
+    let conflict = n.db.backend().upsert(
+        "flow.ai_memory",
+        &["workflow_id", "session_key"],
+        &[Assign::Incoming("messages"), Assign::Incoming("updated_at")],
+    );
+    let sql = format!(
+        "INSERT INTO flow.ai_memory (workflow_id, session_key, messages, updated_at) \
+         VALUES ($1, $2, $3, $4){conflict}"
+    );
+    let _ = n.db.execute(&sql, params![wf, session, json_msgs, chrono::Utc::now()]).await;
 }
 
 /// Extrait le premier objet JSON d'un texte (le modèle peut entourer de prose).

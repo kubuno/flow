@@ -2,6 +2,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use kubuno_db::params;
 use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -32,39 +33,33 @@ pub async fn register(
     Path(id): Path<Uuid>,
     Json(body): Json<RegisterWebhookBody>,
 ) -> Result<Json<Value>> {
-    // Vérifier l'appartenance du workflow.
-    let owns = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM flow.workflows WHERE id = $1 AND owner_id = $2)",
+    // Vérifier l'appartenance du workflow (SELECT id plutôt qu'un EXISTS booléen,
+    // dont le décodage diffère entre moteurs).
+    let owns = state.db.fetch_optional_scalar::<Uuid>(
+        "SELECT id FROM flow.workflows WHERE id = $1 AND owner_id = $2",
+        params![id, user.id],
     )
-    .bind(id)
-    .bind(user.id)
-    .fetch_one(&state.db)
-    .await?;
+    .await?
+    .is_some();
     if !owns {
         return Err(FlowError::NotFound("Workflow introuvable".into()));
     }
 
     // Réutiliser un token existant pour ce nœud, sinon en créer un.
-    let existing: Option<String> = sqlx::query_scalar(
+    let existing: Option<String> = state.db.fetch_optional_scalar::<String>(
         "SELECT token FROM flow.webhooks WHERE workflow_id = $1 AND node_id = $2",
+        params![id, &body.node_id],
     )
-    .bind(id)
-    .bind(&body.node_id)
-    .fetch_optional(&state.db)
     .await?;
 
     let token = match existing {
         Some(t) => t,
         None => {
             let t = gen_token();
-            sqlx::query(
+            state.db.execute(
                 "INSERT INTO flow.webhooks (token, workflow_id, node_id, owner_id) VALUES ($1,$2,$3,$4)",
+                params![&t, id, &body.node_id, user.id],
             )
-            .bind(&t)
-            .bind(id)
-            .bind(&body.node_id)
-            .bind(user.id)
-            .execute(&state.db)
             .await?;
             t
         }
@@ -99,23 +94,23 @@ pub async fn receive(
         )));
     }
 
-    let row = sqlx::query_as::<_, (Uuid, Uuid)>(
+    let row = state.db.fetch_optional_as::<(Uuid, Uuid)>(
         "SELECT workflow_id, owner_id FROM flow.webhooks WHERE token = $1",
+        params![&token],
     )
-    .bind(&token)
-    .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| FlowError::NotFound("Webhook inconnu".into()))?;
 
     let (workflow_id, owner_id) = row;
 
-    // Le workflow doit être actif.
-    let active = sqlx::query_scalar::<_, bool>(
-        "SELECT status = 'active' FROM flow.workflows WHERE id = $1 AND is_trashed = FALSE",
+    // Le workflow doit être actif. On lit le statut et on compare en Rust (une
+    // comparaison booléenne en SQL se décode différemment selon le moteur).
+    let active = state.db.fetch_optional_scalar::<String>(
+        "SELECT status FROM flow.workflows WHERE id = $1 AND is_trashed = FALSE",
+        params![workflow_id],
     )
-    .bind(workflow_id)
-    .fetch_optional(&state.db)
     .await?
+    .map(|s| s == "active")
     .unwrap_or(false);
     if !active {
         return Err(FlowError::Forbidden);

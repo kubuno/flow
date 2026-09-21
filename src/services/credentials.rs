@@ -1,5 +1,6 @@
 //! Resolve a stored credential to its decrypted JSON payload (for node execution).
 
+use kubuno_db::{params, DbPool};
 use serde_json::Value;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -15,17 +16,15 @@ use crate::services::crypto;
 /// Load + decrypt a credential owned by `owner`. Returns the JSON object of
 /// field → value, augmented with a `_type` key. Errors if missing/undecryptable.
 pub async fn resolve(
-    db: &sqlx::PgPool,
+    db: &DbPool,
     internal_secret: &str,
     owner: Uuid,
     id: Uuid,
 ) -> Result<Value, String> {
-    let row = sqlx::query_as::<_, Credential>(
+    let row = db.fetch_optional_as::<Credential>(
         "SELECT * FROM flow.credentials WHERE id = $1 AND owner_id = $2",
+        params![id, owner],
     )
-    .bind(id)
-    .bind(owner)
-    .fetch_optional(db)
     .await
     .map_err(|e| e.to_string())?
     .ok_or_else(|| "Credential introuvable".to_string())?;
@@ -44,7 +43,7 @@ pub async fn resolve(
 /// an unresolved/invalid id is left as-is (the node will report a clear error).
 pub async fn inject_into_config(
     registry: &NodeRegistry,
-    db: &sqlx::PgPool,
+    db: &DbPool,
     internal_secret: &str,
     owner: Uuid,
     node_type: &str,

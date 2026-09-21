@@ -6,6 +6,7 @@
 //!   le même que le core) et déclenche les workflows abonnés via `trigger.kubuno_event`.
 
 use chrono::{Datelike, Timelike, Utc};
+use kubuno_db::{params, Backend, DbPool};
 use serde_json::Value;
 use sqlx::postgres::PgListener;
 use uuid::Uuid;
@@ -21,15 +22,26 @@ pub fn spawn_schedulers(state: AppState) {
     let cron_state = state.clone();
     tokio::spawn(async move { cron_loop(cron_state).await });
 
-    let event_state = state.clone();
-    tokio::spawn(async move {
-        loop {
-            if let Err(e) = event_loop(event_state.clone()).await {
-                tracing::warn!(error = %e, "Écouteur d'événements interrompu, reconnexion dans 5s…");
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    // The core's event bus is PostgreSQL LISTEN/NOTIFY. On a MySQL/SQLite
+    // deployment there is no cross-process notification channel to listen on
+    // (the core would have to poll an outbox), so the event/form/chat triggers
+    // are wired only when this module runs on PostgreSQL. Cron, email and SSE
+    // triggers work on every engine.
+    if matches!(state.db.backend(), Backend::Postgres) {
+        let event_state = state.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = event_loop(event_state.clone()).await {
+                    tracing::warn!(error = %e, "Écouteur d'événements interrompu, reconnexion dans 5s…");
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
             }
-        }
-    });
+        });
+    } else {
+        tracing::info!(
+            "Flow : déclencheurs d'événements (kubuno_event/form/chat) désactivés hors PostgreSQL"
+        );
+    }
 }
 
 // ── CRON ─────────────────────────────────────────────────────────────────────────
@@ -48,10 +60,10 @@ async fn cron_loop(state: AppState) {
         tokio::time::sleep(std::time::Duration::from_secs(wait.max(1))).await;
 
         let now = Utc::now();
-        let active = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>)>(
+        let active = state.db.fetch_all_as::<(Uuid, Uuid, Option<Uuid>)>(
             "SELECT id, owner_id, file_id FROM flow.workflows WHERE status = 'active' AND is_trashed = FALSE",
+            params![],
         )
-        .fetch_all(&state.db)
         .await
         .unwrap_or_default();
 
@@ -138,7 +150,10 @@ fn field_matches(field: &str, value: u32, min: u32, max: u32) -> bool {
 // ── ÉVÉNEMENTS ─────────────────────────────────────────────────────────────────
 
 async fn event_loop(state: AppState) -> Result<(), sqlx::Error> {
-    let mut listener = PgListener::connect_with(&state.db).await?;
+    // Only reached on PostgreSQL (see spawn_schedulers); the LISTEN channel is a
+    // PostgreSQL feature, so we take the concrete pool out of the enum.
+    let DbPool::Pg(pg) = &state.db else { return Ok(()) };
+    let mut listener = PgListener::connect_with(pg).await?;
     listener.listen("kubuno_events").await?;
     tracing::info!("Flow : écoute du canal kubuno_events");
 
@@ -155,10 +170,10 @@ async fn event_loop(state: AppState) -> Result<(), sqlx::Error> {
         };
         let event_payload = event.get("payload").cloned().unwrap_or(Value::Null);
 
-        let active = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>)>(
+        let active = state.db.fetch_all_as::<(Uuid, Uuid, Option<Uuid>)>(
             "SELECT id, owner_id, file_id FROM flow.workflows WHERE status = 'active' AND is_trashed = FALSE",
+            params![],
         )
-        .fetch_all(&state.db)
         .await
         .unwrap_or_default();
 
@@ -203,11 +218,10 @@ pub async fn dispatch_error_workflows(
     execution_id: Uuid,
     error_message: &str,
 ) {
-    let active = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
+    let active = state.db.fetch_all_as::<(Uuid, Option<Uuid>)>(
         "SELECT id, file_id FROM flow.workflows WHERE owner_id = $1 AND status = 'active' AND is_trashed = FALSE",
+        params![owner_id],
     )
-    .bind(owner_id)
-    .fetch_all(&state.db)
     .await
     .unwrap_or_default();
 

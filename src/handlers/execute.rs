@@ -7,6 +7,7 @@ use axum::{
     Json,
 };
 use futures::Stream;
+use kubuno_db::{new_id, params};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -29,12 +30,10 @@ pub async fn execute(
     Path(id): Path<Uuid>,
     body: Option<Json<Value>>,
 ) -> Result<Json<Value>> {
-    let row = sqlx::query_as::<_, (Option<Uuid>,)>(
+    let row = state.db.fetch_optional_as::<(Option<Uuid>,)>(
         "SELECT file_id FROM flow.workflows WHERE id = $1 AND owner_id = $2",
+        params![id, user.id],
     )
-    .bind(id)
-    .bind(user.id)
-    .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| FlowError::NotFound("Workflow introuvable".into()))?;
 
@@ -45,16 +44,14 @@ pub async fn execute(
     let definition = WorkflowDefinition::from_value(&def_value);
     let trigger_data = body.map(|b| b.0).unwrap_or(json!({}));
 
-    let execution_id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO flow.executions
-            (workflow_id, owner_id, status, trigger_source, trigger_data, nodes_total)
-           VALUES ($1,$2,'running','manual',$3,$4) RETURNING id"#,
+    // id minté en Rust (pas de RETURNING sur MySQL).
+    let execution_id = new_id();
+    state.db.execute(
+        "INSERT INTO flow.executions \
+            (id, workflow_id, owner_id, status, trigger_source, trigger_data, nodes_total) \
+           VALUES ($1,$2,$3,'running','manual',$4,$5)",
+        params![execution_id, id, user.id, trigger_data.clone(), definition.nodes.len() as i32],
     )
-    .bind(id)
-    .bind(user.id)
-    .bind(&trigger_data)
-    .bind(definition.nodes.len() as i32)
-    .fetch_one(&state.db)
     .await?;
 
     // Exécution en tâche de fond (détachée de la requête) : elle se poursuit côté
@@ -81,8 +78,9 @@ pub async fn execute(
         }
         // Déclencheur d'erreur sur un run manuel échoué.
         if outcome.status == "error" {
-            let wf_name = sqlx::query_scalar::<_, String>("SELECT name FROM flow.workflows WHERE id = $1")
-                .bind(id).fetch_optional(&st.db).await.ok().flatten().unwrap_or_default();
+            let wf_name = st.db.fetch_optional_scalar::<String>(
+                "SELECT name FROM flow.workflows WHERE id = $1", params![id],
+            ).await.ok().flatten().unwrap_or_default();
             let msg = outcome.error_message.clone().unwrap_or_default();
             crate::runtime::scheduler::dispatch_error_workflows(&st, id, &wf_name, owner, execution_id, &msg).await;
         }
@@ -102,11 +100,10 @@ pub async fn stream(
         let mut ticks = 0u32;
         loop {
             // Vérifier l'appartenance + statut.
-            let exec = sqlx::query_as::<_, (String, Uuid)>(
+            let exec = state.db.fetch_optional_as::<(String, Uuid)>(
                 "SELECT status, owner_id FROM flow.executions WHERE id = $1",
+                params![id],
             )
-            .bind(id)
-            .fetch_optional(&state.db)
             .await
             .ok()
             .flatten();
@@ -120,11 +117,10 @@ pub async fn stream(
                 break;
             }
 
-            let logs = sqlx::query_as::<_, NodeLog>(
+            let logs = state.db.fetch_all_as::<NodeLog>(
                 "SELECT * FROM flow.node_logs WHERE execution_id = $1 ORDER BY executed_at ASC",
+                params![id],
             )
-            .bind(id)
-            .fetch_all(&state.db)
             .await
             .unwrap_or_default();
 
@@ -165,12 +161,10 @@ pub async fn test_node(
     Path((id, node_id)): Path<(Uuid, String)>,
     Json(body): Json<TestNodeBody>,
 ) -> Result<Json<Value>> {
-    let row = sqlx::query_as::<_, (Option<Uuid>,)>(
+    let row = state.db.fetch_optional_as::<(Option<Uuid>,)>(
         "SELECT file_id FROM flow.workflows WHERE id = $1 AND owner_id = $2",
+        params![id, user.id],
     )
-    .bind(id)
-    .bind(user.id)
-    .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| FlowError::NotFound("Workflow introuvable".into()))?;
 

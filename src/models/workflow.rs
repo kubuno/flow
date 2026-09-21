@@ -101,6 +101,9 @@ pub struct Workflow {
     pub error_count:      i32,
     pub last_executed_at: Option<DateTime<Utc>>,
     pub last_error:       Option<String>,
+    // Portable across the three engines: a JSON array column (PostgreSQL alone
+    // has TEXT[]). Decoded via sqlx's json field attribute, bound as a Vec<String>.
+    #[sqlx(json)]
     pub tags:             Vec<String>,
     pub is_trashed:       bool,
     pub is_starred:       bool,

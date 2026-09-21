@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS ai_memory;
+DROP TABLE IF EXISTS email_trigger_state;
+DROP TABLE IF EXISTS credentials;
+DROP TABLE IF EXISTS node_logs;
+DROP TABLE IF EXISTS executions;
+DROP TABLE IF EXISTS jobs;
+DROP TABLE IF EXISTS webhooks;
+DROP TABLE IF EXISTS workflows;

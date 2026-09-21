@@ -2,6 +2,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use kubuno_db::{new_id, params};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -19,12 +20,10 @@ pub async fn export(
     user: FlowUserExt,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
-    let wf = sqlx::query_as::<_, Workflow>(
+    let wf = state.db.fetch_optional_as::<Workflow>(
         "SELECT * FROM flow.workflows WHERE id = $1 AND owner_id = $2",
+        params![id, user.id],
     )
-    .bind(id)
-    .bind(user.id)
-    .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| FlowError::NotFound("Workflow introuvable".into()))?;
 
@@ -68,15 +67,20 @@ pub async fn import(
     // Définition → fichier .kbflw (dossier protégé Flow/).
     let file_id = cf::create_workflow_file(&state, user.id, &name, def_value.clone()).await?;
 
-    let mut wf = sqlx::query_as::<_, Workflow>(
-        r#"INSERT INTO flow.workflows (owner_id, name, description, file_id)
-           VALUES ($1, $2, $3, $4) RETURNING *"#,
+    // MySQL has no RETURNING; the id is minted in Rust and the row re-selected.
+    // tags is bound explicitly (NOT NULL, no default on MySQL/SQLite).
+    let id = new_id();
+    let now = chrono::Utc::now();
+    state.db.execute(
+        "INSERT INTO flow.workflows (id, owner_id, name, description, file_id, tags, created_at, updated_at) \
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        params![id, user.id, &name, Option::<&str>::None, file_id, Vec::<String>::new(), now, now],
     )
-    .bind(user.id)
-    .bind(&name)
-    .bind(Option::<&str>::None)
-    .bind(file_id)
-    .fetch_one(&state.db)
+    .await?;
+    let mut wf = state.db.fetch_one_as::<Workflow>(
+        "SELECT * FROM flow.workflows WHERE id = $1",
+        params![id],
+    )
     .await?;
     wf.definition = def_value;
 

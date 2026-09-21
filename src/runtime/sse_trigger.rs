@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::StreamExt;
+use kubuno_db::params;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -27,10 +28,10 @@ async fn manager(state: AppState) {
     tracing::info!("Flow : worker de déclencheurs SSE démarré");
     let active: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     loop {
-        let workflows = sqlx::query_as::<_, (Uuid, Uuid, Option<Uuid>)>(
+        let workflows = state.db.fetch_all_as::<(Uuid, Uuid, Option<Uuid>)>(
             "SELECT id, owner_id, file_id FROM flow.workflows WHERE status = 'active' AND is_trashed = FALSE",
+            params![],
         )
-        .fetch_all(&state.db)
         .await
         .unwrap_or_default();
 

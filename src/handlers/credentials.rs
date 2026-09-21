@@ -5,6 +5,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use kubuno_db::{new_id, params};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -48,11 +49,10 @@ pub async fn test(
 
 /// GET /credentials — list the user's credentials (metadata only).
 pub async fn list(State(state): State<AppState>, user: FlowUserExt) -> Result<Json<Vec<CredentialMeta>>> {
-    let rows = sqlx::query_as::<_, Credential>(
+    let rows = state.db.fetch_all_as::<Credential>(
         "SELECT * FROM flow.credentials WHERE owner_id = $1 ORDER BY updated_at DESC",
+        params![user.id],
     )
-    .bind(user.id)
-    .fetch_all(&state.db)
     .await
     .map_err(|e| { tracing::error!(error = %e, "list credentials"); e })?;
     Ok(Json(rows.iter().map(CredentialMeta::from).collect()))
@@ -73,18 +73,20 @@ pub async fn create(
     let plaintext = serde_json::to_vec(&dto.data).map_err(|e| FlowError::Validation(e.to_string()))?;
     let (ct, nonce) = crypto::encrypt(&key(&state), &plaintext).map_err(FlowError::Validation)?;
 
-    let row = sqlx::query_as::<_, Credential>(
-        r#"INSERT INTO flow.credentials (owner_id, name, type, data, nonce)
-           VALUES ($1,$2,$3,$4,$5) RETURNING *"#,
+    // id minté en Rust, ligne relue (MySQL n'a pas de RETURNING).
+    let id = new_id();
+    let now = chrono::Utc::now();
+    state.db.execute(
+        "INSERT INTO flow.credentials (id, owner_id, name, type, data, nonce, created_at, updated_at) \
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        params![id, user.id, dto.name.trim(), &dto.type_id, ct, nonce, now, now],
     )
-    .bind(user.id)
-    .bind(dto.name.trim())
-    .bind(&dto.type_id)
-    .bind(&ct)
-    .bind(&nonce)
-    .fetch_one(&state.db)
     .await
     .map_err(|e| { tracing::error!(error = %e, "create credential"); e })?;
+    let row = state.db.fetch_one_as::<Credential>(
+        "SELECT * FROM flow.credentials WHERE id = $1", params![id],
+    )
+    .await?;
     Ok(Json((&row).into()))
 }
 
@@ -95,12 +97,10 @@ pub async fn update(
     Path(id): Path<Uuid>,
     Json(dto): Json<UpdateCredentialDto>,
 ) -> Result<Json<CredentialMeta>> {
-    let existing = sqlx::query_as::<_, Credential>(
+    let existing = state.db.fetch_optional_as::<Credential>(
         "SELECT * FROM flow.credentials WHERE id = $1 AND owner_id = $2",
+        params![id, user.id],
     )
-    .bind(id)
-    .bind(user.id)
-    .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| FlowError::NotFound("Credential introuvable".into()))?;
 
@@ -113,27 +113,28 @@ pub async fn update(
         None => (existing.data, existing.nonce),
     };
 
-    let row = sqlx::query_as::<_, Credential>(
-        r#"UPDATE flow.credentials SET name = $2, data = $3, nonce = $4, updated_at = NOW()
-           WHERE id = $1 RETURNING *"#,
+    // updated_at is stamped in Rust (no trigger); guarded by owner_id.
+    state.db.execute(
+        "UPDATE flow.credentials SET name = $1, data = $2, nonce = $3, updated_at = $4 \
+           WHERE id = $5 AND owner_id = $6",
+        params![&name, data, nonce, chrono::Utc::now(), id, user.id],
     )
-    .bind(id)
-    .bind(&name)
-    .bind(&data)
-    .bind(&nonce)
-    .fetch_one(&state.db)
+    .await?;
+    let row = state.db.fetch_one_as::<Credential>(
+        "SELECT * FROM flow.credentials WHERE id = $1", params![id],
+    )
     .await?;
     Ok(Json((&row).into()))
 }
 
 /// DELETE /credentials/:id
 pub async fn delete(State(state): State<AppState>, user: FlowUserExt, Path(id): Path<Uuid>) -> Result<Json<Value>> {
-    let res = sqlx::query("DELETE FROM flow.credentials WHERE id = $1 AND owner_id = $2")
-        .bind(id)
-        .bind(user.id)
-        .execute(&state.db)
-        .await?;
-    if res.rows_affected() == 0 {
+    let affected = state.db.execute(
+        "DELETE FROM flow.credentials WHERE id = $1 AND owner_id = $2",
+        params![id, user.id],
+    )
+    .await?;
+    if affected == 0 {
         return Err(FlowError::NotFound("Credential introuvable".into()));
     }
     Ok(Json(json!({ "deleted": true })))

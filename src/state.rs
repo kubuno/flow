@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use crate::config::{InstanceConfig, Settings};
 use crate::files_client::FilesClient;
@@ -9,7 +9,7 @@ use crate::runtime::core_proxy::CoreProxy;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db:           PgPool,
+    pub db:           DbPool,
     pub settings:     Arc<Settings>,
     pub proxy:        Arc<CoreProxy>,
     pub registry:     Arc<NodeRegistry>,
