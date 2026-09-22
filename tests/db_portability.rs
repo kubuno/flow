@@ -42,6 +42,7 @@ fn base_settings(engine: &str) -> DbSettings {
         min_connections: 0,
         connect_timeout: std::time::Duration::from_secs(10),
         run_migrations: true,
+        schema_prefix: None,
     }
 }
 
