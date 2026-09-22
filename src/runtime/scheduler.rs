@@ -6,7 +6,7 @@
 //!   le même que le core) et déclenche les workflows abonnés via `trigger.kubuno_event`.
 
 use chrono::{Datelike, Timelike, Utc};
-use kubuno_db::{params, Backend, DbPool};
+use kubuno_db::{params, Backend};
 use serde_json::Value;
 use sqlx::postgres::PgListener;
 use uuid::Uuid;
@@ -151,8 +151,9 @@ fn field_matches(field: &str, value: u32, min: u32, max: u32) -> bool {
 
 async fn event_loop(state: AppState) -> Result<(), sqlx::Error> {
     // Only reached on PostgreSQL (see spawn_schedulers); the LISTEN channel is a
-    // PostgreSQL feature, so we take the concrete pool out of the enum.
-    let DbPool::Pg(pg) = &state.db else { return Ok(()) };
+    // PostgreSQL feature, so we take the concrete pool out. `as_pg()` replaces
+    // the old `DbPool::Pg` enum match (DbPool became a struct in kubuno-db 0.7).
+    let Some(pg) = state.db.as_pg() else { return Ok(()) };
     let mut listener = PgListener::connect_with(pg).await?;
     listener.listen("kubuno_events").await?;
     tracing::info!("Flow : écoute du canal kubuno_events");
