@@ -26,6 +26,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Security
 
+- **Security fixes from the shared database layer (kubuno-db 0.9.0).** The
+  database password can no longer appear in a log through the debug output of
+  the database settings.
+
 - **A webhook can no longer be used to rewrite a workflow's SQL.** A workflow
   that runs a query against an external database can write expressions like
   `{{ trigger.body.email }}` anywhere in its configuration, and those were
