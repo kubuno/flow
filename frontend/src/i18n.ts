@@ -1,7 +1,8 @@
 import { registerModuleTranslations } from '@kubuno/sdk'
 
 const en = {
-  // Clipboard ribbon group (shared across ribbon modules)
+
+  office_bs_file: "File", office_tab_view: "View", office_grp_show: "Show", office_ribbon_fullscreen: "Full screen", office_bs_home: "Home", doc_tab_home: "Home", doc_tab_view: "View", tab_view: "View", math_tab_view: "View",  // Clipboard ribbon group (shared across ribbon modules)
   common_paste: "Paste",
   common_cut: "Cut",
   common_copy: "Copy",
