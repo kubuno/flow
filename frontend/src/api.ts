@@ -1,4 +1,4 @@
-import { api } from '@kubuno/sdk'
+import { api, signedUrl } from '@kubuno/sdk'
 import type { CredentialMeta, CredentialType, Execution, ExprHelp, NodeLog, NodeMeta, Workflow, WorkflowDefinition } from './types'
 
 export const flowApi = {
@@ -113,8 +113,10 @@ export const flowApi = {
 
 /**
  * Ouvre un flux SSE des logs de nœuds d'une exécution.
- * Le SSE passe par le proxy core (`/api/v1/flow/...`) ; on s'appuie sur le cookie
- * d'accès (withCredentials) car EventSource ne porte pas le header Authorization.
+ * Le SSE passe par le proxy core (`/api/v1/flow/...`) ; EventSource ne porte pas le
+ * header Authorization, l'URL porte donc un ticket signé de type `stream`.
+ * The stream opens asynchronously (the ticket must be fetched first); the returned
+ * function cancels it at any point, including before it has opened.
  */
 export function streamExecution(
   executionId: string,
@@ -122,17 +124,23 @@ export function streamExecution(
   onDone: (status: string) => void,
   onError?: () => void,
 ): () => void {
-  const es = new EventSource(`/api/v1/flow/executions/${executionId}/stream`, { withCredentials: true })
-  es.addEventListener('node', (e) => {
-    try { onNode(JSON.parse((e as MessageEvent).data)) } catch { /* ignore */ }
-  })
-  es.addEventListener('done', (e) => {
-    onDone((e as MessageEvent).data)
-    es.close()
-  })
-  es.addEventListener('error', () => {
-    onError?.()
-    es.close()
-  })
-  return () => es.close()
+  let es: EventSource | null = null
+  let cancelled = false
+  signedUrl(`/api/v1/flow/executions/${executionId}/stream`, { purpose: 'stream' }).then(url => {
+    if (cancelled) return
+    const src = new EventSource(url)
+    es = src
+    src.addEventListener('node', (e) => {
+      try { onNode(JSON.parse((e as MessageEvent).data)) } catch { /* ignore */ }
+    })
+    src.addEventListener('done', (e) => {
+      onDone((e as MessageEvent).data)
+      src.close()
+    })
+    src.addEventListener('error', () => {
+      onError?.()
+      src.close()
+    })
+  }).catch(() => { if (!cancelled) onError?.() })
+  return () => { cancelled = true; es?.close() }
 }
