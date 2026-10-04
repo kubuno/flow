@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "Flow (Kubuno Core + browser)",
+    "Projects": [
+      {
+        "Path": "Kubuno.Flow.Server.rsproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "frontend\\Kubuno.Flow.Web.esproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

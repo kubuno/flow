@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Kubuno flow (Chrome)",
+      "url": "http://localhost:8080/flow",
+      "webRoot": "${workspaceFolder}",
+      "sourceMapPathOverrides": { "http://localhost:8080/modules/flow/*": "${workspaceFolder}/dist/*" }
+    }
+    {
+      "type": "edge",
+      "request": "launch",
+      "name": "Kubuno flow (Edge)",
+      "url": "http://localhost:8080/flow",
+      "webRoot": "${workspaceFolder}",
+      "sourceMapPathOverrides": { "http://localhost:8080/modules/flow/*": "${workspaceFolder}/dist/*" }
+    },
+  ]
+}
