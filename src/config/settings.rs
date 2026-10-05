@@ -22,11 +22,22 @@ pub struct ServerSettings {
 pub struct CoreSettings {
     pub url:             String,
     pub internal_secret: String,
-    #[serde(default = "default_files_url")]
-    pub files_url:       String,
 }
 
-fn default_files_url() -> String { "http://127.0.0.1:3101".to_string() }
+impl CoreSettings {
+    /// The client of the `drive` module, which stores this module's files.
+    ///
+    /// It is given the **core's** URL: the module never talks to `drive`
+    /// directly. Every call goes to the core's IPC relay
+    /// (`/internal/ipc/drive/...`), which authenticates this module's internal
+    /// secret, swaps in `drive`'s own and forwards the request, so `drive` may
+    /// live on any port, or not be installed at all, without this module
+    /// knowing. Handing the client `drive`'s own URL sent every call to a route
+    /// that does not exist there (404).
+    pub fn files_client(&self) -> crate::files_client::FilesClient {
+        crate::files_client::FilesClient::new(self.url.clone(), self.internal_secret.clone())
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RuntimeSettings {
@@ -75,7 +86,6 @@ impl Settings {
             .set_default("server.port", 3118i64)?
             .set_default("core.url", "http://127.0.0.1:8080")?
             .set_default("core.internal_secret", "")?
-            .set_default("core.files_url", "http://127.0.0.1:3101")?
             .set_default("database.max_connections", 20i64)?
             .set_default("database.min_connections", 2i64)?
             .set_default("database.connect_timeout", 10i64)?

@@ -183,10 +183,8 @@ async fn main() -> Result<()> {
         egress_policy,
     ));
     let registry = Arc::new(build_registry());
-    let files_client = Arc::new(kubuno_flow::files_client::FilesClient::new(
-        settings.core.files_url.clone(),
-        settings.core.internal_secret.clone(),
-    ));
+    // Reaches `drive` through the core's IPC relay, never directly.
+    let files_client = Arc::new(settings.core.files_client());
 
     let http = Client::new();
 

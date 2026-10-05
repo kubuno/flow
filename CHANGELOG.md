@@ -9,6 +9,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Fixed
+
+- **Flow could not reach the file store on a default install.** Workflow nodes
+  that read or write files were sent to the file store's own address instead of
+  the platform core, which is the only place that relays such requests, so the
+  call failed with a "not found" error. Flow now always goes through the core,
+  and the separate `core.files_url` setting (and the `KUBUNO_FILES_URL`
+  override) is gone: only `core.url` is needed.
+
 ## [0.1.9] - 2026-10-05
 
 ### Changed
