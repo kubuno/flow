@@ -250,6 +250,8 @@ impl From<crate::runtime::core_proxy::ProxyError> for NodeError {
 }
 
 #[async_trait]
+// async-trait marks the boxed futures #[must_use], which newer clippy reports as double_must_use.
+#[allow(clippy::double_must_use)]
 pub trait NodeExecutor: Send + Sync {
     fn meta(&self) -> NodeMeta;
 
