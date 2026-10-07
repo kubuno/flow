@@ -47,8 +47,9 @@ Automate your work by wiring nodes together on a canvas — triggers, logic, nat
 
 Kubuno is **modular**: a **core** (the platform's "operating system") plus independent **modules**. Each module — Flow included — is a **separate process** that connects to the core at startup on its own dedicated port (**3118** for Flow); the core proxies its routes (`/api/v1/flow/*`), distributes events and serves its runtime-loaded React frontend bundle.
 
-- **Backend** — `src/`: Axum + SQLx through the shared `kubuno-db` layer (PostgreSQL, MySQL/MariaDB or SQLite, chosen at run time; namespace `flow`); a node runtime engine in `src/nodes/` and `src/runtime/`; migrations in `migrations/`.
-- **Frontend** — `frontend/`: a React bundle built to `entry.js`, consuming `@kubuno/sdk`, `@ui` and `@kubuno/drive` from the host at runtime via its import map.
+- **Server** — `server/`: Axum + SQLx through the shared `kubuno-db` layer (PostgreSQL, MySQL/MariaDB or SQLite, chosen at run time; namespace `flow`); a node runtime engine in `server/src/nodes/` and `server/src/runtime/`; migrations in `server/migrations/`.
+- **Web** — `web/`: a React bundle built to `entry.js`, consuming `@kubuno/sdk`, `@ui` and `@kubuno/drive` from the host at runtime via its import map.
+- **Mobile** — `mobile/`: reserved for the mobile apps (see `mobile/README.md`).
 
 ## Install
 
@@ -68,8 +69,8 @@ The `.kbpkg` is a ZIP archive rooted at the module folder; the core unpacks it i
 **Requirements:** Rust ≥ 1.82, Node.js ≥ 24, and a database — PostgreSQL 16, MySQL/MariaDB or SQLite.
 
 ```bash
-cargo build --release                     # → target/release/kubuno-flow (shared crates from git tags)
-cd frontend && npm ci && npm run build    # → dist/{entry.js, entry.css} (@kubuno/* from npm)
+cd server && cargo build --release        # → server/target/release/kubuno-flow (shared crates from git tags)
+cd web && npm ci && npm run build         # → web/dist/{entry.js, entry.css} (@kubuno/* from npm)
 bash build_kbpkg.sh                       # → dist/flow-<version>-<os>-<arch>.kbpkg
 bash build_kbpkg.sh --install             # build, install into the local module store, and restart
 ```

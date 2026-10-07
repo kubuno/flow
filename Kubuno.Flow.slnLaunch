@@ -3,11 +3,11 @@
     "Name": "Flow (Kubuno Core + browser)",
     "Projects": [
       {
-        "Path": "Kubuno.Flow.Server.rsproj",
+        "Path": "server\\Kubuno.Flow.Server.rsproj",
         "Action": "Start"
       },
       {
-        "Path": "frontend\\Kubuno.Flow.Web.esproj",
+        "Path": "web\\Kubuno.Flow.Web.esproj",
         "Action": "Start"
       }
     ]
