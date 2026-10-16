@@ -67,8 +67,8 @@ pub struct FieldDef {
     /// Field whose stored value is used verbatim: `{{ ... }}` inside it is NEVER
     /// expanded. Reserved for values a caller must not be able to reshape, such
     /// as the text of an SQL statement. Without it, a workflow that templates
-    /// an expression into its SQL would let whoever supplies the trigger data
-    /// - an anonymous caller, on a webhook-triggered workflow - rewrite the
+    /// an expression into its SQL would let whoever supplies the trigger data -
+    /// an anonymous caller, on a webhook-triggered workflow - rewrite the
     /// statement. Dynamic values belong in bound parameters instead.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub literal: bool,
