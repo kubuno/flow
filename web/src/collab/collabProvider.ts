@@ -36,7 +36,7 @@ function b64decode(str: string): Uint8Array {
 export type CollabStatus = 'connecting' | 'connected' | 'disconnected'
 
 export interface CollabHandle {
-  /** Diffuse un message d'awareness (curseur/présence) — texte libre, non persisté. */
+  /** Diffuse un message d'awareness (curseur/présence) - texte libre, non persisté. */
   sendAwareness: (json: unknown) => void
   /** Ferme la session. */
   destroy: () => void
@@ -116,7 +116,7 @@ export function connectCollab(
     // The handshake cannot carry the Authorization header. Whatever URL the
     // builder produced (custom builders still append `?token=`), the access
     // token is stripped and a one-minute socket ticket bound to the room's
-    // path is presented instead — a fresh one on every (re)connect.
+    // path is presented instead - a fresh one on every (re)connect.
     signedSocketUrl(buildUrl(room, token)).then(url => {
       if (closed) return
       attach(new WebSocket(url))
@@ -135,7 +135,7 @@ export function connectCollab(
       retry = 0
       setStatus('connected')
       // Pousser l'état local courant : utile quand un client a « seedé » le doc
-      // (document neuf) — l'état devient ainsi partagé/persisté côté serveur.
+      // (document neuf) - l'état devient ainsi partagé/persisté côté serveur.
       const state = Y.encodeStateAsUpdate(doc)
       if (state.length > 2) sock.send(state as Uint8Array<ArrayBuffer>)
       // Publier notre présence courante pour que les pairs déjà connectés nous voient.
@@ -206,7 +206,7 @@ export function useCollab(
     onStatus?: (s: CollabStatus) => void
     onAwareness?: (json: unknown) => void
     onSync?: (empty: boolean) => void
-    /** Awareness Yjs (curseurs/présence) — relayée automatiquement si fournie. */
+    /** Awareness Yjs (curseurs/présence) - relayée automatiquement si fournie. */
     awareness?: Awareness
     /** Construit l'URL WS (défaut : route collab générique du core). */
     urlBuilder?: (room: string, token: string) => string

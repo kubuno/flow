@@ -11,10 +11,10 @@ import { useModulePrefs } from './userPrefs'
 // that `useModulePrefs<T extends Record<string, unknown>>` requires.
 type FlowPrefs = {
   [key: string]: unknown // satisfies useModulePrefs<T extends Record<string, unknown>>
-  gridStyle:    string   // 'dots' | 'lines' | 'none' — canvas background grid
+  gridStyle:    string   // 'dots' | 'lines' | 'none' - canvas background grid
   snapToGrid:   boolean  // snap node positions to the grid
   showMinimap:  boolean  // show the canvas minimap
-  defaultZoom:  string   // '50' | '75' | '100' — initial canvas zoom level (%)
+  defaultZoom:  string   // '50' | '75' | '100' - initial canvas zoom level (%)
   confirmRun:   boolean  // ask for confirmation before executing a workflow
   autoFitView:  boolean  // automatically fit the workflow to the viewport on open
 }

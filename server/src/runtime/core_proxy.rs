@@ -1,10 +1,10 @@
-//! CoreProxy — canal de communication sortante de Flow.
+//! CoreProxy - canal de communication sortante de Flow.
 //!
 //! Adaptation pragmatique : le core n'expose pas (encore) `/internal/proxy`.
 //! Les appels vers les modules Kubuno passent donc par le proxy existant du core
 //! (`{core}/api/v1/{module}{path}`) en s'authentifiant avec le secret interne et
 //! l'identité de l'utilisateur (`X-Kubuno-User-Id`). Les appels externes (internet)
-//! sont effectués directement ici — aucun nœud ne crée son propre client HTTP.
+//! sont effectués directement ici - aucun nœud ne crée son propre client HTTP.
 
 use reqwest::Method;
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ pub struct CoreProxy {
     core_url:        String,
     internal_secret: String,
     /// Administrator allow/deny host lists, refreshed live. They can only
-    /// NARROW what `net_guard::guard_host` already allows — see `runtime::egress`.
+    /// NARROW what `net_guard::guard_host` already allows - see `runtime::egress`.
     egress_policy:   SharedEgressPolicy,
 }
 
@@ -49,7 +49,7 @@ pub enum ProxyError {
 
 impl ProxyError {
     pub fn is_retryable(&self) -> bool {
-        // A blocked request is a policy decision — never retry it.
+        // A blocked request is a policy decision - never retry it.
         matches!(self, ProxyError::Http(_) | ProxyError::RateLimited)
     }
 }
@@ -69,8 +69,8 @@ impl CoreProxy {
 
     /// Full verdict on an outbound URL: the unconditional SSRF guard first, then
     /// the administrator's host lists. Exposed so the few call sites that do NOT
-    /// go through `call_external` — the SSE trigger keeps a long-lived streaming
-    /// connection of its own — can be held to the same rules.
+    /// go through `call_external` - the SSE trigger keeps a long-lived streaming
+    /// connection of its own - can be held to the same rules.
     pub async fn check_egress(&self, url: &str) -> Result<(), ProxyError> {
         let (host, port) = host_port_from_url(url)?;
         self.check_egress_host(&host, port).await.map(|_| ())
@@ -79,7 +79,7 @@ impl CoreProxy {
     /// Same verdict for a call site that opens a RAW SOCKET and therefore has no
     /// URL to offer: database nodes, credential connectivity test, IMAP/POP3
     /// email trigger. Returns the validated addresses so the caller can dial one
-    /// of them directly instead of resolving the name again — that second lookup
+    /// of them directly instead of resolving the name again - that second lookup
     /// is the DNS-rebinding window.
     pub async fn check_egress_host(
         &self,
@@ -218,7 +218,7 @@ impl CoreProxy {
             .collect();
 
         let text = resp.text().await.unwrap_or_default();
-        // Le corps peut ne pas être du JSON (texte, HTML…) — on l'enveloppe alors.
+        // Le corps peut ne pas être du JSON (texte, HTML…) - on l'enveloppe alors.
         let body: serde_json::Value =
             serde_json::from_str(&text).unwrap_or_else(|_| serde_json::Value::String(text.clone()));
 

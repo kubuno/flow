@@ -1,4 +1,4 @@
-//! Nœud Code — JavaScript inline via QuickJS (rquickjs). Traitement interne
+//! Nœud Code - JavaScript inline via QuickJS (rquickjs). Traitement interne
 //! uniquement : pas d'accès réseau (fetch/XHR retirés). Pour les appels HTTP,
 //! utiliser un nœud HTTP Request séparé.
 

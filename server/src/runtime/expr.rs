@@ -542,7 +542,7 @@ fn call_fn(name: &str, args: &[Value]) -> Value {
             }
         }
         "dateAdd" => {
-            // dateAdd(date, n, unit) — unit: seconds|minutes|hours|days
+            // dateAdd(date, n, unit) - unit: seconds|minutes|hours|days
             match parse_date(&a0()) {
                 Some(d) => {
                     let n = num(&a1()) as i64;

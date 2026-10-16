@@ -23,7 +23,7 @@ impl CronTrigger {
                 FieldDef::new("cron", "Expression cron", FieldType::Text)
                     .required()
                     .placeholder("0 * * * *")
-                    .help("min heure jour mois jour-semaine — ex: 0 9 * * 1 (lundi 9h)"),
+                    .help("min heure jour mois jour-semaine - ex: 0 9 * * 1 (lundi 9h)"),
             ],
         }
     }

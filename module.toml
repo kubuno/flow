@@ -2,7 +2,7 @@
 id           = "flow"
 display_name = "Flow"
 version      = "0.1.9"
-description  = "Orchestrateur de workflows visuels — automatisation no-code, connecteurs natifs Kubuno"
+description  = "Orchestrateur de workflows visuels - automatisation no-code, connecteurs natifs Kubuno"
 author       = "Kubuno Contributors"
 license      = "AGPL-3.0"
 runtime      = "rust"

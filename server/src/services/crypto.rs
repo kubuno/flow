@@ -1,7 +1,7 @@
 //! AES-256-GCM encryption for credential payloads.
 //!
 //! The key is derived from the core `internal_secret` (stable across restarts as
-//! long as the secret is configured) — no extra key management. Each ciphertext
+//! long as the secret is configured) - no extra key management. Each ciphertext
 //! carries its own random 12-byte nonce, stored alongside it.
 
 use aes_gcm::aead::{Aead, KeyInit};

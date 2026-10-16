@@ -1,4 +1,4 @@
-//! MongoDB node — document operations against an EXTERNAL MongoDB (credential or
+//! MongoDB node - document operations against an EXTERNAL MongoDB (credential or
 //! connection string). One-shot client per execution.
 
 use async_trait::async_trait;
@@ -37,7 +37,7 @@ fn doc_to_json(d: Document) -> Value {
 /// it first also expands a `mongodb+srv://` record, which is where the real
 /// hosts hide. Unlike the SQL drivers the hosts are NOT rewritten to their
 /// validated address: the driver re-dials the members a replica set advertises
-/// in its handshake, and TLS certificates are checked against the host name —
+/// in its handshake, and TLS certificates are checked against the host name -
 /// substituting an IP would break both. A DNS-rebinding window therefore
 /// remains on this path, the connection itself is not held open by us.
 async fn connect(uri: &str, n: &NodeContext<'_>) -> Result<Client, NodeError> {
@@ -52,7 +52,7 @@ async fn connect(uri: &str, n: &NodeContext<'_>) -> Result<Client, NodeError> {
                     .await
                     .map_err(NodeError::from)?;
             }
-            // Unix domain socket: never routed, so never checkable — refuse it.
+            // Unix domain socket: never routed, so never checkable - refuse it.
             _ => {
                 return Err(NodeError::Blocked(
                     "socket local interdit dans l'URI MongoDB".into(),
@@ -86,7 +86,7 @@ impl crate::nodes::trait_::NodeExecutor for MongoNode {
                     ("insertOne","Insérer un"),("insertMany","Insérer plusieurs"),
                     ("updateMany","Mettre à jour"),("deleteMany","Supprimer"),
                 ]).default(json!("find")),
-                FieldDef::new("filter", "Filtre (JSON)", FieldType::Json).help(r#"{"statut":"actif"} — vide = tous"#),
+                FieldDef::new("filter", "Filtre (JSON)", FieldType::Json).help(r#"{"statut":"actif"} - vide = tous"#),
                 FieldDef::new("data", "Données (JSON)", FieldType::Json).help("Document(s) à insérer, ou champs à $set."),
                 FieldDef::new("limit", "Limite (find)", FieldType::Number).default(json!(100)),
             ],

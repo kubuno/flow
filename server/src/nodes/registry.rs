@@ -142,7 +142,7 @@ pub fn build_registry() -> NodeRegistry {
     // Code
     add!(CodeNode);
 
-    // IA — agent + sous-nœuds (modèles, mémoire, outils, parser)
+    // IA - agent + sous-nœuds (modèles, mémoire, outils, parser)
     add!(AiAgent);
     add!(AnthropicModel);
     add!(OpenAiModel);
@@ -154,7 +154,7 @@ pub fn build_registry() -> NodeRegistry {
     add!(WorkflowTool);
     add!(StructuredParser);
 
-    // Intégrations — connecteurs vers ~100 services tiers (data-driven).
+    // Intégrations - connecteurs vers ~100 services tiers (data-driven).
     for spec in super::integrations::service_catalog() {
         let node: Arc<dyn NodeExecutor> = Arc::new(super::integrations::ServiceNode(spec));
         nodes.insert(node.meta().node_type.clone(), node);

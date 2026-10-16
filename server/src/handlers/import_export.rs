@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-/// GET /workflows/:id/export — export JSON (format Kubuno, compatible n8n-like).
+/// GET /workflows/:id/export - export JSON (format Kubuno, compatible n8n-like).
 pub async fn export(
     State(state): State<AppState>,
     user: FlowUserExt,
@@ -40,7 +40,7 @@ pub async fn export(
     })))
 }
 
-/// POST /import — importe un workflow (format Kubuno ou n8n).
+/// POST /import - importe un workflow (format Kubuno ou n8n).
 pub async fn import(
     State(state): State<AppState>,
     user: FlowUserExt,

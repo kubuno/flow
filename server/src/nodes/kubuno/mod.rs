@@ -36,7 +36,7 @@ pub struct SendMailNode;
 impl crate::nodes::trait_::NodeExecutor for SendMailNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "kubuno.mail.send".into(), name: "Mail — Envoyer".into(),
+            node_type: "kubuno.mail.send".into(), name: "Mail - Envoyer".into(),
             description: "Envoie un email via le module Mail".into(),
             category: NodeCategory::Kubuno, icon: "Mail".into(), color: "#1a73e8".into(),
             inputs: 1, outputs: vec![],
@@ -66,7 +66,7 @@ pub struct CreateContactNode;
 impl crate::nodes::trait_::NodeExecutor for CreateContactNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "kubuno.contacts.create".into(), name: "Contacts — Créer".into(),
+            node_type: "kubuno.contacts.create".into(), name: "Contacts - Créer".into(),
             description: "Crée un contact dans le carnet d'adresses".into(),
             category: NodeCategory::Kubuno, icon: "UserPlus".into(), color: "#1a73e8".into(),
             inputs: 1, outputs: vec![],
@@ -98,7 +98,7 @@ pub struct SendChatNode;
 impl crate::nodes::trait_::NodeExecutor for SendChatNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "kubuno.chat.send".into(), name: "Chat — Envoyer".into(),
+            node_type: "kubuno.chat.send".into(), name: "Chat - Envoyer".into(),
             description: "Envoie un message dans une conversation".into(),
             category: NodeCategory::Kubuno, icon: "MessageSquare".into(), color: "#1a73e8".into(),
             inputs: 1, outputs: vec![],
@@ -125,7 +125,7 @@ pub struct CreateEventNode;
 impl crate::nodes::trait_::NodeExecutor for CreateEventNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "kubuno.calendar.create".into(), name: "Agenda — Créer événement".into(),
+            node_type: "kubuno.calendar.create".into(), name: "Agenda - Créer événement".into(),
             description: "Crée un événement dans l'agenda".into(),
             category: NodeCategory::Kubuno, icon: "CalendarPlus".into(), color: "#1a73e8".into(),
             inputs: 1, outputs: vec![],
@@ -161,7 +161,7 @@ pub struct FormResponsesNode;
 impl crate::nodes::trait_::NodeExecutor for FormResponsesNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "kubuno.forms.responses".into(), name: "Forms — Réponses".into(),
+            node_type: "kubuno.forms.responses".into(), name: "Forms - Réponses".into(),
             description: "Récupère les réponses d'un formulaire".into(),
             category: NodeCategory::Kubuno, icon: "ClipboardList".into(), color: "#1a73e8".into(),
             inputs: 1, outputs: vec![],
@@ -184,7 +184,7 @@ pub struct ListFilesNode;
 impl crate::nodes::trait_::NodeExecutor for ListFilesNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "kubuno.drive.list".into(), name: "Drive — Lister".into(),
+            node_type: "kubuno.drive.list".into(), name: "Drive - Lister".into(),
             description: "Liste les fichiers (racine ou dossier)".into(),
             category: NodeCategory::Kubuno, icon: "Folder".into(), color: "#1a73e8".into(),
             inputs: 1, outputs: vec![],
@@ -244,7 +244,7 @@ pub struct CreateTaskNode;
 impl crate::nodes::trait_::NodeExecutor for CreateTaskNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "kubuno.tasks.create".into(), name: "Tâches — Créer".into(),
+            node_type: "kubuno.tasks.create".into(), name: "Tâches - Créer".into(),
             description: "Crée une tâche dans un tableau".into(),
             category: NodeCategory::Kubuno, icon: "ListChecks".into(), color: "#1a73e8".into(),
             inputs: 1, outputs: vec![],

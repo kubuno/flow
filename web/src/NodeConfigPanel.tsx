@@ -33,7 +33,7 @@ function CredentialField({ field, value, credentials, onChange, onManage }: {
   return (
     <div className="flex items-center gap-1">
       <select className={base} value={typeof value === 'string' ? value : ''} onChange={e => onChange(e.target.value || null)}>
-        <option value="">—</option>
+        <option value="">-</option>
         {compatible.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
       <button type="button" onClick={() => onManage?.(types[0])} title="Gérer les identifiants"
@@ -71,8 +71,8 @@ function FieldInput({ field, value, exprHelp, onChange }: { field: FieldDef; val
           className="w-full"
           value={str}
           onChange={v => onChange(v)}
-          placeholder="—"
-          options={[{ value: '', label: '—' }, ...(field.options?.map(o => ({ value: o.value, label: o.label })) ?? [])]}
+          placeholder="-"
+          options={[{ value: '', label: '-' }, ...(field.options?.map(o => ({ value: o.value, label: o.label })) ?? [])]}
         />
       )
     case 'json':

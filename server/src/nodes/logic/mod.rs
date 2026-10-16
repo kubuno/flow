@@ -1,4 +1,4 @@
-//! Nœuds logiques et transformateurs — traitement 100 % interne, aucun appel sortant.
+//! Nœuds logiques et transformateurs - traitement 100 % interne, aucun appel sortant.
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -94,7 +94,7 @@ impl crate::nodes::trait_::NodeExecutor for SwitchNode {
             fields: vec![
                 FieldDef::new("value", "Valeur", FieldType::Expression).required(),
                 FieldDef::new("cases", "Correspondances (JSON)", FieldType::Json)
-                    .help(r#"[{"equals":"a","port":"0"}, …] — sinon port "default""#),
+                    .help(r#"[{"equals":"a","port":"0"}, …] - sinon port "default""#),
             ],
         }
     }
@@ -180,7 +180,7 @@ impl crate::nodes::trait_::NodeExecutor for TransformNode {
             inputs: 1, outputs: vec![],
             fields: vec![
                 FieldDef::new("mapping", "Mapping (JSON)", FieldType::Json)
-                    .help(r#"{"nomComplet":"{{trigger.prenom}} {{trigger.nom}}"} — déjà résolu"#),
+                    .help(r#"{"nomComplet":"{{trigger.prenom}} {{trigger.nom}}"} - déjà résolu"#),
             ],
         }
     }
@@ -483,7 +483,7 @@ impl crate::nodes::trait_::NodeExecutor for DateTimeNode {
                     ("now","Maintenant"),("format","Formater"),("add","Ajouter une durée"),
                     ("diff","Différence"),("timestamp","Horodatage Unix"),
                 ]).default(json!("now")),
-                FieldDef::new("date", "Date", FieldType::Expression).placeholder("{{ trigger.date }} — vide = maintenant"),
+                FieldDef::new("date", "Date", FieldType::Expression).placeholder("{{ trigger.date }} - vide = maintenant"),
                 FieldDef::new("date2", "Deuxième date (différence)", FieldType::Expression),
                 FieldDef::new("format", "Format (formater)", FieldType::Text).placeholder("%d/%m/%Y %H:%M").default(json!("%Y-%m-%d %H:%M:%S")),
                 FieldDef::new("amount", "Quantité (ajouter)", FieldType::Number).default(json!(1)),
@@ -694,7 +694,7 @@ impl crate::nodes::trait_::NodeExecutor for EditFieldsNode {
             inputs: 1, outputs: vec![],
             fields: vec![
                 FieldDef::new("assignments", "Champs (JSON)", FieldType::Json)
-                    .help(r#"{"nomComplet":"{{ $json.prenom }} {{ $json.nom }}", "actif":true} — valeurs déjà résolues"#),
+                    .help(r#"{"nomComplet":"{{ $json.prenom }} {{ $json.nom }}", "actif":true} - valeurs déjà résolues"#),
                 FieldDef::new("keep_only", "Ne garder que ces champs", FieldType::Boolean).default(json!(false)),
             ],
         }

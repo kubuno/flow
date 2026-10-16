@@ -1,10 +1,10 @@
 import { ModuleServiceRegistry } from '@kubuno/sdk'
-// THE « Presse-papiers » ribbon group — shared by EVERY ribbon editor of Kubuno.
+// THE « Presse-papiers » ribbon group - shared by EVERY ribbon editor of Kubuno.
 //
 // Word puts Clipboard first on the Home tab, and so do we: this helper is the
 // single source of that group, so an editor never rebuilds it by hand. Its
 // default content is Coller (large) · Couper · Copier · Historique, and every
-// piece is overridable — an editor either just wires its own handlers, appends
+// piece is overridable - an editor either just wires its own handlers, appends
 // its own items (format painter, clear formatting…), or replaces the item list
 // outright while keeping the group's identity and position.
 //
@@ -93,7 +93,7 @@ export interface ClipboardGroupOptions {
   t: TLike
   /** Group label override (defaults to « Presse-papiers »). */
   label?: string
-  /** Handlers — each defaults to acting on the focused text field. */
+  /** Handlers - each defaults to acting on the focused text field. */
   onPaste?: () => void
   onCut?: () => void
   onCopy?: () => void
@@ -109,7 +109,7 @@ export interface ClipboardGroupOptions {
   onHistory?: (() => void) | false
   /** Items APPENDED after the defaults (format painter, clear formatting…). */
   extraItems?: RibbonItem[]
-  /** Full item-list override — the group keeps its id, label and first position. */
+  /** Full item-list override - the group keeps its id, label and first position. */
   items?: RibbonItem[]
   /** Mobile quick bar override (`[]` keeps clipboard out of it, as Word does). */
   mobileQuick?: RibbonItem[]
@@ -118,7 +118,7 @@ export interface ClipboardGroupOptions {
 }
 
 /**
- * The « Presse-papiers » group — ALWAYS the FIRST group of the Home tab.
+ * The « Presse-papiers » group - ALWAYS the FIRST group of the Home tab.
  * Undo/Redo do NOT belong here (nor in any other group): they live in the tab
  * strip action block, above the ribbon.
  */

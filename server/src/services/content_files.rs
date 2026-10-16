@@ -1,6 +1,6 @@
 //! Stockage du CONTENU des workflows dans le module `files` (plus en base).
 //!
-//! Format Kubuno propre à Flow — MIME `application/vnd.kubuno.flow+json`,
+//! Format Kubuno propre à Flow - MIME `application/vnd.kubuno.flow+json`,
 //! extension `.kbflw`, JSON gzippé. La base ne garde que la référence `file_id`
 //! + la métadonnée (nom, statut, compteurs…).
 //!

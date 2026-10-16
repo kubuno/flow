@@ -163,7 +163,7 @@ export default function FlowEditor() {
 
   const isMobileView = useIsMobile()
   // Mobile : le workflow s'ouvre en LECTURE (exploration du graphe au doigt) ;
-  // « Modifier » bascule en édition — même modèle que les éditeurs Office.
+  // « Modifier » bascule en édition - même modèle que les éditeurs Office.
   const [mode, setMode] = useState<'read' | 'edit'>(() =>
     typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches ? 'read' : 'edit')
   const readMobile = isMobileView && mode === 'read'
@@ -375,7 +375,7 @@ export default function FlowEditor() {
     } catch { /* ignore */ } finally { setSaving(false) }
   }, [wf, ready, nodes, edges, notes, titleDraft])
 
-  // Autosave fiable (debounce + flush au démontage/fermeture) — le workflow
+  // Autosave fiable (debounce + flush au démontage/fermeture) - le workflow
   // (.kbflw) n'était sauvé que manuellement / avant exécution.
   // Gardé par `ready` : tant que la collab n'a pas synchronisé/amorcé, l'état
   // {nodes,edges} est vide et NE DOIT PAS être sauvegardé (sinon perte de données).
@@ -423,20 +423,20 @@ export default function FlowEditor() {
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null
   const selected = selectedId ? nodes.find(n => n.id === selectedId) ?? null : null
 
-  // Add a sticky note near the canvas origin (toolbar/ribbon entry — the canvas
+  // Add a sticky note near the canvas origin (toolbar/ribbon entry - the canvas
   // also adds notes via double-click, but the ribbon needs an explicit button).
   const addNoteAtOrigin = useCallback(() => addNote(160 + notes.length * 30, 160 + notes.length * 24), [addNote, notes.length])
 
-  // ── MS Office-like ribbon (data-driven) — replaces the menu bar + toolbar.
+  // ── MS Office-like ribbon (data-driven) - replaces the menu bar + toolbar.
   // Home tab: Clipboard (always first) + Workflow (New/Duplicate, former
   // menuActions) + Editing (Delete) + Execution (Test/Activate/History) +
   // Credentials. Insert tab: add node + note. View tab: history toggle. No action
-  // of the former toolbar is lost — Undo/Redo moved to the tab strip.
+  // of the former toolbar is lost - Undo/Redo moved to the tab strip.
   const ribbon: RibbonTab[] = [
     {
       id: 'home', label: t('office_bs_home', { defaultValue: 'Accueil' }),
       groups: [
-        // Clipboard (shared helper) — ALWAYS the first group of the Home tab: it
+        // Clipboard (shared helper) - ALWAYS the first group of the Home tab: it
         // pastes/cuts/copies the selected node. Undo/Redo are NOT in the ribbon,
         // they live in the tab strip (`UndoRedoButtons`, see `titleActions`).
         clipboardGroup({
@@ -504,7 +504,7 @@ export default function FlowEditor() {
     },
   ]
 
-  // Onglet « Fichier » (backstage façon Office) — TOUJOURS en 1ʳᵉ position du ruban.
+  // Onglet « Fichier » (backstage façon Office) - TOUJOURS en 1ʳᵉ position du ruban.
   // À l'ouverture, c'est l'onglet 'home' qui s'affiche (pas le backstage).
   const { fileTab, activeTabId, onTabChange } = useFileTab({
     theme: THEME_FLOW,
@@ -535,7 +535,7 @@ export default function FlowEditor() {
     },
   })
 
-  // Toggle the "starred" (favourite) flag — persisted via the partial update API.
+  // Toggle the "starred" (favourite) flag - persisted via the partial update API.
   // This editor keeps the current workflow in local state (`wf`), so we refresh it
   // from the API response (equivalent to invalidating the current workflow query).
   const starMut = useCallback(async (next: boolean) => {
@@ -550,11 +550,11 @@ export default function FlowEditor() {
   const saveButton = <SaveButton onSave={save} saving={saving} dirty={dirty} label={t('save')} />
 
   // Annuler / Rétablir : dans la bande d'onglets (au-dessus du ruban), comme dans
-  // tous les éditeurs à ruban de Kubuno — jamais dans un groupe du ruban.
+  // tous les éditeurs à ruban de Kubuno - jamais dans un groupe du ruban.
   const undoRedoButtons = (
     <UndoRedoButtons
       onUndo={undo} onRedo={redo} canUndo={undoMgr.canUndo()} canRedo={undoMgr.canRedo()}
-      // `undo`/`redo` already carry their shortcut — do not append it twice.
+      // `undo`/`redo` already carry their shortcut - do not append it twice.
       undoLabel={t('undo', { defaultValue: 'Annuler (Ctrl+Z)' })}
       redoLabel={t('redo', { defaultValue: 'Refaire (Ctrl+Maj+Z)' })}
     />

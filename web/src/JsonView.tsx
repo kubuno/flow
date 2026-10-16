@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronRight, ChevronDown } from 'lucide-react'
 
-/** Collapsible JSON tree — read-only viewer for node input/output data. */
+/** Collapsible JSON tree - read-only viewer for node input/output data. */
 export default function JsonView({ data, depth = 0, label }: { data: unknown; depth?: number; label?: string }) {
   const [open, setOpen] = useState(depth < 2)
 

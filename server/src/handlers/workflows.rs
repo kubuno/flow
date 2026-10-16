@@ -23,9 +23,9 @@ pub struct ListQuery {
     pub trashed: Option<bool>,
 }
 
-/// GET /workflows[?trashed=true] — liste des workflows de l'utilisateur.
+/// GET /workflows[?trashed=true] - liste des workflows de l'utilisateur.
 /// Vue liste : la définition complète n'est pas chargée (un placeholder vide est
-/// renvoyé) — l'éditeur récupère le graphe réel via GET /workflows/:id.
+/// renvoyé) - l'éditeur récupère le graphe réel via GET /workflows/:id.
 pub async fn list(
     State(state): State<AppState>,
     user: FlowUserExt,
@@ -71,7 +71,7 @@ pub(crate) async fn enforce_workflow_quota(state: &AppState, owner: Uuid) -> Res
     Ok(())
 }
 
-/// POST /workflows — création.
+/// POST /workflows - création.
 pub async fn create(
     State(state): State<AppState>,
     user: FlowUserExt,
@@ -149,7 +149,7 @@ pub struct OpenByFileDto {
     pub file_id: Uuid,
 }
 
-/// POST /workflows/open-by-file — résout un workflow depuis l'id de fichier .kbflw.
+/// POST /workflows/open-by-file - résout un workflow depuis l'id de fichier .kbflw.
 pub async fn open_by_file(
     State(state): State<AppState>,
     user: FlowUserExt,
@@ -165,7 +165,7 @@ pub async fn open_by_file(
     Ok(Json(fetch_owned_full(&state, id, user.id).await?))
 }
 
-/// PUT /workflows/:id — sauvegarde (nom/description/définition/tags/statut).
+/// PUT /workflows/:id - sauvegarde (nom/description/définition/tags/statut).
 pub async fn update(
     State(state): State<AppState>,
     user: FlowUserExt,
@@ -176,7 +176,7 @@ pub async fn update(
     let existing = fetch_owned(&state, id, user.id).await?;
 
     // Ne renommer que si le nom CHANGE réellement (le frontend renvoie le titre à
-    // chaque autosave) — évite un rename .kbflw inutile à chaque sauvegarde.
+    // chaque autosave) - évite un rename .kbflw inutile à chaque sauvegarde.
     let name_changed = dto.name.as_deref().map(str::trim).is_some_and(|n| n != existing.name);
     let name = dto.name.unwrap_or(existing.name);
     let description = dto.description.or(existing.description);
@@ -228,7 +228,7 @@ pub async fn update(
     Ok(Json(wf))
 }
 
-/// DELETE /workflows/:id — permanent deletion, as the UI promises.
+/// DELETE /workflows/:id - permanent deletion, as the UI promises.
 ///
 /// This used to only flag the row `is_trashed`, but the module offers neither a
 /// trash view nor a restore action: the workflow vanished from the list while its
@@ -249,7 +249,7 @@ pub async fn delete(
     if let Some(fid) = wf.file_id {
         if let Err(e) = state.files_client.delete_file(user.id, fid).await {
             tracing::warn!(workflow_id = %id, file_id = %fid, error = %e,
-                           "Drive: delete_file failed — file left orphaned");
+                           "Drive: delete_file failed - file left orphaned");
         }
     }
     Ok(Json(json!({ "deleted": true })))

@@ -11,7 +11,7 @@ const NODE_H = 96 // hauteur approximative d'un nœud (test d'intersection marqu
 // Hauteurs des bandes du box pour calculer le centre vertical réel (ports centrés).
 const NODE_HEAD_H = 52, NODE_SUMMARY_H = 18, NODE_FOOTER_H = 19, NODE_DISABLED_H = 13
 
-// Lighten (amt > 0) or darken (amt < 0) a #rrggbb colour — used for the icon
+// Lighten (amt > 0) or darken (amt < 0) a #rrggbb colour - used for the icon
 // tile gradient so each category colour gets some depth without a palette table.
 // Category → existing picker-group i18n key (for the node subtitle).
 const CAT_LABEL_KEY: Record<string, string> = {
@@ -72,7 +72,7 @@ function outPortYAt(n: WorkflowNode, meta: NodeMeta | undefined, portId: string,
 }
 
 // ── Routage orthogonal des connecteurs (repris du sous-module Diagrams d'Office) ──
-// Segments droits + coudes arrondis + sauts de croisement — plus de courbes de Bézier.
+// Segments droits + coudes arrondis + sauts de croisement - plus de courbes de Bézier.
 type Pt = { x: number; y: number }
 const BEND_R = 10 // rayon d'arrondi des coudes
 const HOP_R = 5   // rayon des sauts de croisement
@@ -204,7 +204,7 @@ function nodeSummary(n: WorkflowNode, meta: NodeMeta | undefined): string {
 interface Viewport { tx: number; ty: number; scale: number }
 
 interface Props {
-  /** Id du workflow — clé de persistance locale du viewport (pan + zoom). */
+  /** Id du workflow - clé de persistance locale du viewport (pan + zoom). */
   workflowId?: string
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
@@ -247,7 +247,7 @@ export default function FlowCanvas({
 }: Props) {
   const { t } = useTranslation('flow')
   const containerRef = useRef<HTMLDivElement>(null)
-  // Viewport (pan + zoom) restauré depuis localStorage, par workflow — l'espace
+  // Viewport (pan + zoom) restauré depuis localStorage, par workflow - l'espace
   // de travail se rouvre là où on l'a laissé (préférence locale, non collaborative).
   const vpKey = workflowId ? `flow:vp:${workflowId}` : null
   const [vp, setVp] = useState<Viewport>(() => {
@@ -408,7 +408,7 @@ export default function FlowCanvas({
 
   // ⚠️ Le clic souris SYNTHÉTIQUE du relâchement retomberait sur le menu à peine
   // ouvert : on supprime la séquence via `preventDefault` sur le `touchend`
-  // (drapeau, pas fenêtre de temps — le clic arrive au relâchement).
+  // (drapeau, pas fenêtre de temps - le clic arrive au relâchement).
   useEffect(() => {
     const c = containerRef.current
     if (!c) return
@@ -829,7 +829,7 @@ export default function FlowCanvas({
                   onDoubleClick={ev => { ev.stopPropagation(); addWaypointAt(e, toWorld(ev.clientX, ev.clientY)) }}
                   onContextMenu={ev => openMenu(ev, edgeMenu(e, toWorld(ev.clientX, ev.clientY)))}
                 />
-                {/* Bouton + (insérer un nœud sur la connexion) — au survol. */}
+                {/* Bouton + (insérer un nœud sur la connexion) - au survol. */}
                 {hoverEdge === e.id && (
                   <g style={{ pointerEvents: 'all', cursor: 'pointer' }}
                     onClick={ev => { ev.stopPropagation(); onInsertOnEdge(e.id) }}>
@@ -1010,7 +1010,7 @@ export default function FlowCanvas({
                 )}
               </div>
 
-              {/* Port d'entrée — cible du glisser-pour-connecter (data-input).
+              {/* Port d'entrée - cible du glisser-pour-connecter (data-input).
                   Anneau creux quand libre, rempli couleur catégorie quand connecté. */}
               {hasInput && (() => { const conn = edges.some(ed => ed.target === n.id && !ed.target_port)
                 return (
@@ -1023,7 +1023,7 @@ export default function FlowCanvas({
                     title={t('port_in')}
                   />
                 ) })()}
-              {/* Ports de sortie données — masqués pour les sous-nœuds IA. */}
+              {/* Ports de sortie données - masqués pour les sous-nœuds IA. */}
               {!aiOut && outs.map((port, i) => { const conn = edges.some(ed => ed.source === n.id && (ed.source_port ?? 'default') === port)
                 const dragging = connectDrag?.source === n.id && connectDrag?.port === port
                 return (
@@ -1094,7 +1094,7 @@ export default function FlowCanvas({
 
       {!isMobileView && renderMinimap()}
 
-      {/* Contrôle zoom — desktop seulement (au doigt : pincement ; « Ajuster »
+      {/* Contrôle zoom - desktop seulement (au doigt : pincement ; « Ajuster »
           reste accessible par le ruban et le menu contextuel). */}
       {!isMobileView && <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-[#ffffff] border border-[#dadce0] rounded-lg px-2 py-1 text-[#5f6368] text-xs no-print">
         <button className="px-1.5 hover:text-[#202124]" onClick={() => zoomBy(0.9)}>−</button>

@@ -68,7 +68,7 @@ pub struct FieldDef {
     /// expanded. Reserved for values a caller must not be able to reshape, such
     /// as the text of an SQL statement. Without it, a workflow that templates
     /// an expression into its SQL would let whoever supplies the trigger data
-    /// — an anonymous caller, on a webhook-triggered workflow — rewrite the
+    /// - an anonymous caller, on a webhook-triggered workflow - rewrite the
     /// statement. Dynamic values belong in bound parameters instead.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub literal: bool,
@@ -167,9 +167,9 @@ pub struct NodeContext<'a> {
     pub settings:     &'a Settings,
     /// Snapshot of the admin-editable instance settings for this run.
     pub instance:     crate::config::InstanceConfig,
-    /// Registre des nœuds — permet à un nœud d'en exécuter d'autres (sous-workflow).
+    /// Registre des nœuds - permet à un nœud d'en exécuter d'autres (sous-workflow).
     pub registry:     &'a crate::nodes::NodeRegistry,
-    /// Face client du module `files` — lecture du contenu d'autres workflows.
+    /// Face client du module `files` - lecture du contenu d'autres workflows.
     pub files_client: &'a crate::files_client::FilesClient,
     /// Profondeur d'imbrication des sous-workflows (garde-fou anti-récursion).
     pub depth:        u8,

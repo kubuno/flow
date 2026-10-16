@@ -1,4 +1,4 @@
-// <Backstage> — vue « Fichier » façon MS Office, partagée par TOUS les sous-éditeurs
+// <Backstage> - vue « Fichier » façon MS Office, partagée par TOUS les sous-éditeurs
 // Office. Rail vertical à gauche (couleur d'accent de l'app) = flèche de retour +
 // sections (Accueil/Nouveau/Ouvrir/Enregistrer/Exporter/Imprimer/Informations…) ;
 // panneau de contenu à droite. Data-driven : chaque éditeur fournit `sections`.
@@ -43,7 +43,7 @@ export function Backstage({ sections, theme, onBack, locked = false, initial }: 
   const isMobile = useIsMobile()
   const accentBg = `var(--kbn-office-file-accent, ${fileAccentFor(theme.accent)})`
 
-  // Mobile : le rail vertical (240px) mangerait la moitié de l'écran — les
+  // Mobile : le rail vertical (240px) mangerait la moitié de l'écran - les
   // sections deviennent une rangée de chips horizontale sous l'en-tête, le
   // contenu occupe toute la largeur.
   if (isMobile) {

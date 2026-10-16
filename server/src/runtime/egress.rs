@@ -4,12 +4,12 @@
 //! unconditional anti-SSRF guard applied to every outbound URL and to every raw
 //! socket: the guard always runs first and can never be turned off from the
 //! console. What an administrator gets here is the ability
-//! to narrow the remaining surface — an allowlist of the only hosts a workflow
+//! to narrow the remaining surface - an allowlist of the only hosts a workflow
 //! may reach, and a denylist of hosts it may never reach. Neither list can widen
 //! anything: a host the guard refuses stays refused whatever the lists say.
 //!
 //! Both lists are plain text, one entry per line, blank lines and `#` comments
-//! ignored. An entry is a HOST, not a URL, but a pasted URL is tolerated — the
+//! ignored. An entry is a HOST, not a URL, but a pasted URL is tolerated - the
 //! scheme, the port, the path and any credentials are stripped. `*.example.com`
 //! matches sub-domains only; list `example.com` too if the apex must be reached.
 //! Matching is case-insensitive and the trailing dot of an absolute name is
@@ -23,9 +23,9 @@ use std::sync::{Arc, RwLock};
 /// One parsed entry of a list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Pattern {
-    /// `example.com` — that exact host.
+    /// `example.com` - that exact host.
     Exact(String),
-    /// `*.example.com` — any sub-domain of it, but NOT the apex.
+    /// `*.example.com` - any sub-domain of it, but NOT the apex.
     Subdomains(String),
 }
 
@@ -43,7 +43,7 @@ impl Pattern {
 }
 
 /// The two lists as the administrator left them. An empty allowlist means "no
-/// allowlist" — every host the SSRF guard already accepted stays reachable.
+/// allowlist" - every host the SSRF guard already accepted stays reachable.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EgressPolicy {
     allow: Vec<Pattern>,
@@ -68,7 +68,7 @@ fn parse_entry(raw: &str) -> Option<Pattern> {
     if let Some(pos) = s.find('/') {
         s = &s[..pos];
     }
-    // Drop userinfo (`user:pass@host`) — everything before the last '@'.
+    // Drop userinfo (`user:pass@host`) - everything before the last '@'.
     if let Some(pos) = s.rfind('@') {
         s = &s[pos + 1..];
     }
@@ -107,7 +107,7 @@ fn parse_list(settings: &Value, key: &str) -> Vec<Pattern> {
 impl EgressPolicy {
     /// Reads both lists out of the core's `{key: value}` settings object. A
     /// missing or non-string value yields an empty list, i.e. no extra
-    /// restriction — never a lock-out caused by a malformed setting.
+    /// restriction - never a lock-out caused by a malformed setting.
     pub fn from_settings(settings: &Value) -> Self {
         Self {
             allow: parse_list(settings, "egress_allowed_hosts"),

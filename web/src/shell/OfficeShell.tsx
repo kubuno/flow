@@ -1,5 +1,5 @@
 import { WorkspaceShell, WORKSPACE_OFFICE, useSidebarStore, useConfirm } from '@kubuno/sdk'
-// OfficeShell — la chrome COMMUNE à tous les sous-éditeurs Office, qui remplace la
+// OfficeShell - la chrome COMMUNE à tous les sous-éditeurs Office, qui remplace la
 // barre de menus + la toolbar par un RUBAN (façon MS Office). Enveloppe le
 // `WorkspaceShell` du core : reprend toutes ses props (topbar, titre, retour, thème,
 // actions, statut, rail, bottom/status bar, corps…) et rend le ruban dans le slot
@@ -13,7 +13,7 @@ import { useIsMobile, ConfirmDialog } from '@ui'
 import { Ribbon, RibbonTabStrip } from '../ribbon/Ribbon'
 import type { RibbonTab, RibbonGroup, RibbonItem } from '../ribbon/types'
 
-// Réduction du ruban (façon MS Office) — PRÉFIXE de clé localStorage : la clé réelle est
+// Réduction du ruban (façon MS Office) - PRÉFIXE de clé localStorage : la clé réelle est
 // suffixée par le sous-module (cf. `ribbonKey`) → persistance PAR sous-module. Défaut = déplié.
 const RIBBON_COLLAPSED_KEY = 'kubuno.ribbon.collapsed'
 
@@ -81,7 +81,7 @@ export function OfficeShell({ ribbon, activeTabId, onTabChange, hideHeaderAction
   const activeTab = activeTabId ?? ownTab
   const changeTab = useCallback((id: string) => { onTabChange?.(id); if (activeTabId === undefined) setOwnTab(id) }, [onTabChange, activeTabId])
 
-  // ── Plein écran (F11) — bouton garanti dans Affichage → Afficher de TOUT ruban ──
+  // ── Plein écran (F11) - bouton garanti dans Affichage → Afficher de TOUT ruban ──
   const { t } = useTranslation()
   const [isFullscreen, setIsFullscreen] = useState(() => typeof document !== 'undefined' && !!document.fullscreenElement)
   useEffect(() => {
@@ -186,7 +186,7 @@ export function OfficeShell({ ribbon, activeTabId, onTabChange, hideHeaderAction
     delete forwarded.titlePlaceholder
     // BANDE D'ONGLETS DANS LA TOPBAR (desktop) : la rangée dédiée du ruban disparaît
     // (30px gagnés) et, en mode recherche, l'overlay opaque de la topbar recouvre les
-    // onglets — masqués sans que rien ne se décale. Hauteur explicite = topbarHeight
+    // onglets - masqués sans que rien ne se décale. Hauteur explicite = topbarHeight
     // pour que les onglets s'alignent au BAS de la topbar (l'onglet actif, carte
     // blanche, se raccorde à la rangée de groupes en dessous).
     forwarded.titleSlot = (
@@ -198,7 +198,7 @@ export function OfficeShell({ ribbon, activeTabId, onTabChange, hideHeaderAction
     )
   }
 
-  // Mobile: immersive editing — register a most-specific sidebar config for the
+  // Mobile: immersive editing - register a most-specific sidebar config for the
   // exact editor path so the shell hides its bottom nav, waffle FAB and drawer
   // while an editor is open (the mobile ribbon owns the bottom edge). Desktop
   // never sees this config (registered only while isMobile).
@@ -231,7 +231,7 @@ export function OfficeShell({ ribbon, activeTabId, onTabChange, hideHeaderAction
     </>
   )
   if (!isMobile) return withConfirm
-  // Mobile : la barre de commandes du ruban est FIXE en bas de l'écran — on
+  // Mobile : la barre de commandes du ruban est FIXE en bas de l'écran - on
   // réserve sa hauteur sous l'éditeur (le shell ne pose plus de pb-14 quand la
   // nav basse est masquée par hideSidebar). `ribbon` vide (mode lecture) →
   // pas de barre, pas de réservation : plein écran. ⚠️ Le WRAPPER, lui, est

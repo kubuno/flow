@@ -1,4 +1,4 @@
-// Modèle de données du ruban (façon MS Office) — partagé par TOUS les sous-éditeurs
+// Modèle de données du ruban (façon MS Office) - partagé par TOUS les sous-éditeurs
 // Office. Chaque sous-éditeur déclare ses onglets ; le composant <Ribbon> fait tout
 // le rendu, le style et le responsive. Data-driven : enrichir le ruban = enrichir
 // ces structures + <Ribbon>, jamais dupliquer par éditeur.
@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 export type RibbonItemKind =
   | 'button'      // bouton d'action (large = icône+libellé empilés ; small = compact)
   | 'toggle'      // bouton bascule (état actif surligné)
-  | 'dropdown'    // liste déroulante (police, taille…) — rendu via @ui Dropdown
+  | 'dropdown'    // liste déroulante (police, taille…) - rendu via @ui Dropdown
   | 'split'       // action principale + petit chevron ouvrant un menu d'options
   | 'menu'        // bouton SANS action propre : toute sa surface ouvre un menu, le
                   //   chevron étant SOUS le libellé (gros bouton « Tableau » de Word).
@@ -33,7 +33,7 @@ export interface RibbonItem {
   tooltip?: string
   shortcut?: string              // affiché dans le tooltip
   onClick?: () => void
-  /** Palette MOBILE : forcer la TUILE LIBELLÉE même pour un toggle à icône —
+  /** Palette MOBILE : forcer la TUILE LIBELLÉE même pour un toggle à icône -
    *  pour les bascules dont l'icône seule ne parle pas (sélecteurs de vue…). */
   paletteTile?: boolean
   // dropdown / gallery / split

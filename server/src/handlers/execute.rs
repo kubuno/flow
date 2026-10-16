@@ -22,7 +22,7 @@ use crate::{
     state::AppState,
 };
 
-/// POST /workflows/:id/execute — exécution manuelle immédiate (hors file).
+/// POST /workflows/:id/execute - exécution manuelle immédiate (hors file).
 /// Retourne l'`execution_id` à streamer.
 pub async fn execute(
     State(state): State<AppState>,
@@ -89,7 +89,7 @@ pub async fn execute(
     Ok(Json(json!({ "execution_id": execution_id })))
 }
 
-/// GET /executions/:id/stream — SSE des logs de nœuds en temps réel (polling DB).
+/// GET /executions/:id/stream - SSE des logs de nœuds en temps réel (polling DB).
 pub async fn stream(
     State(state): State<AppState>,
     user: FlowUserExt,
@@ -154,7 +154,7 @@ pub struct TestNodeBody {
     pub input_data: Value,
 }
 
-/// POST /workflows/:id/nodes/:node_id/test — teste un nœud isolément.
+/// POST /workflows/:id/nodes/:node_id/test - teste un nœud isolément.
 pub async fn test_node(
     State(state): State<AppState>,
     user: FlowUserExt,

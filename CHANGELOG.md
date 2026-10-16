@@ -40,8 +40,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   chooses, from the same build. The engine is read from configuration at
   start-up (`[database] engine = "postgres" | "mysql" | "sqlite"`), and the
   module creates and migrates its own namespace on first run. Existing
-  PostgreSQL instances are migrated in place — a workflow's tags become a JSON
-  array and an internal timestamp trigger is retired — with no change to stored
+  PostgreSQL instances are migrated in place - a workflow's tags become a JSON
+  array and an internal timestamp trigger is retired - with no change to stored
   data or behaviour. On a lightweight single-file (SQLite) or MySQL/MariaDB
   deployment, the event/form/chat triggers that rely on PostgreSQL's
   notification bus are inactive; time (cron), e-mail and SSE triggers, and every
@@ -60,7 +60,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   that runs a query against an external database can write expressions like
   `{{ trigger.body.email }}` anywhere in its configuration, and those were
   expanded in the text of the SQL statement as well. On a workflow started by
-  an incoming webhook — a public address, with no sign-in — the caller supplies
+  an incoming webhook - a public address, with no sign-in - the caller supplies
   that data, so anyone who knew the address could reshape the statement and run
   their own SQL against the database the workflow's owner had connected. The
   statement is now used exactly as it was written, and dynamic values go
@@ -76,12 +76,12 @@ number at release time, and CI publishes that section as the GitHub Release note
   pulled in an RSA implementation vulnerable to a timing side-channel
   (RUSTSEC-2023-0071) for which no fix will ever exist. The new line does not
   depend on it at all, and it refuses any SQL string built at run time unless it
-  has been audited — the queries here were checked and marked. The two that
+  has been audited - the queries here were checked and marked. The two that
   carry a workflow's own statement are marked because writing that statement is
   what the node is for; the fix above is what keeps a caller out of it.
 - **Input validation library updated.** The version in use carried
   RUSTSEC-2024-0421 through its domain-name parser, which accepted Punycode
-  labels that decode to plain ASCII — a mismatch an attacker can use to make two
+  labels that decode to plain ASCII - a mismatch an attacker can use to make two
   different names look like one.
 
 ### Fixed
@@ -114,12 +114,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **This module now installs as a Kubuno package (`.kbpkg`) only.** Its system
   packages (Debian/RPM and the Windows and macOS installers) are no longer
   built: the module is distributed as one `.kbpkg` per platform (Linux, Windows,
-  macOS) that the Kubuno server installs itself — from the admin console, or
+  macOS) that the Kubuno server installs itself - from the admin console, or
   offline with `kubuno modules:install <file>.kbpkg`.
 - **Dates are formatted by the platform now, not by a library.** `date-fns` is
   gone from this module: the shared SDK exposes helpers built on `Intl`, which is
   localised for every language we ship and needs no locale bundle loaded. Call
-  sites say what a date is FOR — `formatDate(d, 'date')` — and the platform
+  sites say what a date is FOR - `formatDate(d, 'date')` - and the platform
   decides how to write it, so a reader in Japanese no longer gets a French
   layout. Machine formats (keys, `<input type="date">` values) go through
   `toISODate` and friends, built from local calendar fields so the day cannot
@@ -128,12 +128,12 @@ number at release time, and CI publishes that section as the GitHub Release note
   dependency for a dozen lines of finished logic; call sites are unchanged.
 - **The README now opens with the module's logo.** The public README on
   GitHub now shows the module's designer logo (the same PNG shown as the
-  browser tab icon and in the applications menu) at the top of the page — the
+  browser tab icon and in the applications menu) at the top of the page - the
   repository landing now matches the icon a signed-in user sees inside the
   platform. The image ships in-repo, under `.github/logo.png`, so it renders
   even when the repo is browsed offline.
 
-- **New Flow logo** — a gold hexagon with an "F" and a small flowchart, used
+- **New Flow logo** - a gold hexagon with an "F" and a small flowchart, used
   as the browser-tab icon and in the applications menu. It is now raster (PNG)
   designer artwork.
 
@@ -149,11 +149,11 @@ number at release time, and CI publishes that section as the GitHub Release note
   release; the lockfile now takes the version that replaced it.
 - **The package could not be built where `zip` is absent.** The Windows job of
   the continuous integration has no `zip`, so the Windows package was simply lost
-  the first time it was attempted — a script failure, not a build failure. The
+  the first time it was attempted - a script failure, not a build failure. The
   builder now falls back to 7-Zip, then to PowerShell.
 ### Added
 
-- **This module now ships a `.kbpkg`** — the single package format a Kubuno
+- **This module now ships a `.kbpkg`** - the single package format a Kubuno
   server installs by itself, the same file on Linux, Windows and macOS. It
   carries the same binary, interface and manifest as the system packages,
   arranged the way the server expects to find a module on disk, plus a
@@ -167,7 +167,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 - **A built package could be thrown away instead of published.** The job that
   attaches a package to the release waited ten minutes for another workflow to
-  create that release, then gave up with "release never appeared — build.yml
+  create that release, then gave up with "release never appeared - build.yml
   likely failed". The diagnosis was wrong: on a repository whose `.deb` takes
   longer than ten minutes to build, the release simply did not exist yet, and a
   package that had built perfectly was discarded. Four modules reached v0.1.6
@@ -185,7 +185,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **Flow now authenticates proxied requests from a signed token instead of
   trusting plain headers.** Requests must carry a valid `X-Kubuno-Auth` token
   minted by the core with this module's internal secret (see `kubuno-modauth`),
-  rather than reading `X-Kubuno-User-*` headers at face value — which any process
+  rather than reading `X-Kubuno-User-*` headers at face value - which any process
   reaching Flow's loopback port could otherwise forge to act as any user.
 
 ### Added
@@ -207,14 +207,14 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 - **Pill-shaped buttons are gone from the interface.** Filter chips, view
   segments, tab selectors and action buttons that were drawn as pills now use the
-  same 4 px corner radius as every other button — the shape set them apart for no
+  same 4 px corner radius as every other button - the shape set them apart for no
   reason other than habit. Round buttons that hold a lone icon, avatars, status
   dots and non-clickable badges keep their shape: a circle around a single glyph
   is not a pill.
 
 - Theme tokens: two colours for navigation labels (`--color-text-nav`,
   `--color-text-nav-active`). Every module carries the same token sheet, so the
-  values must match across them — whichever bundle loads last would otherwise
+  values must match across them - whichever bundle loads last would otherwise
   win. No visible change inside this module.
 
 ### Changed

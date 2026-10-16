@@ -20,7 +20,7 @@ fn header<'a>(h: &'a HeaderMap, k: &str) -> Option<&'a str> {
     h.get(k).and_then(|v| v.to_str().ok())
 }
 
-/// POST /mcp/run — { workflow_id, input } → workflow output. Internal-only.
+/// POST /mcp/run - { workflow_id, input } → workflow output. Internal-only.
 pub async fn run(State(state): State<AppState>, headers: HeaderMap, Json(args): Json<Value>) -> Result<Json<Value>> {
     // Authentification interne (appel proxifié par le core, pas un JWT utilisateur).
     if header(&headers, "x-internal-secret") != Some(state.settings.core.internal_secret.as_str()) {

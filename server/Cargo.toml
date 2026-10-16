@@ -2,7 +2,7 @@
 name        = "kubuno-flow"
 version     = "0.1.9"
 edition     = "2021"
-description = "Kubuno Flow — orchestrateur de workflows visuels"
+description = "Kubuno Flow - orchestrateur de workflows visuels"
 license     = "AGPL-3.0"
 repository  = "https://github.com/kubuno/flow"
 
@@ -51,7 +51,7 @@ rquickjs           = { version = "0.6", features = ["full"] }
 chrono-tz          = { version = "0.10", features = ["serde"] }
 redis              = { version = "0.27", default-features = false, features = ["tokio-comp"] }
 mongodb            = "3"
-# Email triggers (IMAP — même pile que le module mail ; POP3 maison sur ces flux TLS)
+# Email triggers (IMAP - même pile que le module mail ; POP3 maison sur ces flux TLS)
 async-imap         = { version = "0.9", default-features = false, features = ["runtime-tokio"] }
 tokio-native-tls   = "0.3"
 native-tls         = "0.2"

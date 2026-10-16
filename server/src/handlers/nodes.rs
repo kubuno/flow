@@ -9,12 +9,12 @@ use crate::{
     state::AppState,
 };
 
-/// GET /nodes — catalogue de tous les nœuds disponibles + métadonnées.
+/// GET /nodes - catalogue de tous les nœuds disponibles + métadonnées.
 pub async fn catalog(State(state): State<AppState>) -> Json<Vec<serde_json::Value>> {
     Json(state.registry.catalog())
 }
 
-/// GET /expression-help — fonctions et variables disponibles dans les expressions
+/// GET /expression-help - fonctions et variables disponibles dans les expressions
 /// `{{ … }}` (alimente l'autocomplétion de l'éditeur d'expression du frontend).
 pub async fn expression_help() -> Json<serde_json::Value> {
     Json(serde_json::json!({
@@ -23,7 +23,7 @@ pub async fn expression_help() -> Json<serde_json::Value> {
     }))
 }
 
-/// GET /nodes/:type — métadonnées d'un nœud.
+/// GET /nodes/:type - métadonnées d'un nœud.
 pub async fn get(
     State(state): State<AppState>,
     Path(node_type): Path<String>,

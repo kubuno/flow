@@ -23,7 +23,7 @@ pub fn resolve_value(value: &Value, ctx: &Value) -> Value {
 }
 
 /// Puts back, into an already-resolved config, the fields the node declared as
-/// `literal` — their stored text is used exactly as authored.
+/// `literal` - their stored text is used exactly as authored.
 ///
 /// `resolve_value` walks the whole config and cannot tell an SQL statement from
 /// a label, so the statement is restored here rather than skipped there. See

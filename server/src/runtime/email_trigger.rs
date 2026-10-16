@@ -160,7 +160,7 @@ fn parse_email(raw: &[u8]) -> Value {
 /// The mail host is workflow configuration, so it is exactly as user-supplied as
 /// an HTTP node's URL: unguarded, this loop would happily poll a service bound
 /// on the instance itself. The guard runs first, and the socket is then opened
-/// on the VALIDATED ADDRESS — nothing resolves `cfg.host` a second time, so
+/// on the VALIDATED ADDRESS - nothing resolves `cfg.host` a second time, so
 /// there is no DNS-rebinding window here. The name is still passed to the TLS
 /// handshake, where it belongs: the certificate must match it.
 async fn guarded_connect(state: &AppState, cfg: &EmailCfg, proto: &str) -> Result<TcpStream, String> {

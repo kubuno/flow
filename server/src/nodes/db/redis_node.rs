@@ -1,4 +1,4 @@
-//! Redis node — key/value operations against an EXTERNAL Redis (credential or
+//! Redis node - key/value operations against an EXTERNAL Redis (credential or
 //! URL). One-shot async connection per execution.
 
 use async_trait::async_trait;
@@ -53,7 +53,7 @@ async fn guarded_connection(url: &str, n: &NodeContext<'_>) -> Result<Connection
                 .await
                 .map_err(NodeError::from)?;
         }
-        // Unix domain socket: never routed, so never checkable — refuse it.
+        // Unix domain socket: never routed, so never checkable - refuse it.
         _ => return Err(NodeError::Blocked("socket local interdit dans l'URL Redis".into())),
     }
     Ok(info)

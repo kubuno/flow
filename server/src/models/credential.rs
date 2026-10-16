@@ -4,7 +4,7 @@
 //! The catalogue is intentionally built from generic primitives (HTTP Basic /
 //! Header / Query / Bearer auth, OAuth1/OAuth2, generic API key) which make *any*
 //! HTTP API usable, plus a broad curated set of popular services. New types are
-//! pure data — add an entry to `credential_catalog()`.
+//! pure data - add an entry to `credential_catalog()`.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -108,19 +108,19 @@ pub fn credential_catalog() -> Vec<CredentialType> {
     v.push(ct("httpBasicAuth", "HTTP Basic Auth", "Lock", "generic", vec![
         txt("user", "Utilisateur").req(), pwd("password", "Mot de passe").req(),
     ]));
-    v.push(ct("httpHeaderAuth", "HTTP — En-tête", "Lock", "generic", vec![
+    v.push(ct("httpHeaderAuth", "HTTP - En-tête", "Lock", "generic", vec![
         txt("name", "Nom de l'en-tête").req().ph("Authorization"), pwd("value", "Valeur").req(),
     ]));
-    v.push(ct("httpQueryAuth", "HTTP — Paramètre d'URL", "Lock", "generic", vec![
+    v.push(ct("httpQueryAuth", "HTTP - Paramètre d'URL", "Lock", "generic", vec![
         txt("name", "Nom du paramètre").req().ph("api_key"), pwd("value", "Valeur").req(),
     ]));
-    v.push(ct("httpBearerAuth", "HTTP — Bearer", "Lock", "generic", vec![
+    v.push(ct("httpBearerAuth", "HTTP - Bearer", "Lock", "generic", vec![
         pwd("token", "Jeton (Bearer)").req(),
     ]));
     v.push(ct("httpDigestAuth", "HTTP Digest Auth", "Lock", "generic", vec![
         txt("user", "Utilisateur").req(), pwd("password", "Mot de passe").req(),
     ]));
-    v.push(ct("httpCustomAuth", "HTTP — Personnalisé (JSON)", "Lock", "generic", vec![
+    v.push(ct("httpCustomAuth", "HTTP - Personnalisé (JSON)", "Lock", "generic", vec![
         CredField::new("json", "En-têtes / paramètres (JSON)", CredFieldType::Json).req()
             .help(r#"{"headers":{"X-Api-Key":"…"},"qs":{"token":"…"}}"#),
     ]));
@@ -360,7 +360,7 @@ pub struct Credential {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Public view of a credential (metadata only — never the secret values).
+/// Public view of a credential (metadata only - never the secret values).
 #[derive(Debug, Serialize)]
 pub struct CredentialMeta {
     pub id:         Uuid,

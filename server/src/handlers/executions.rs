@@ -40,7 +40,7 @@ pub async fn list_for_workflow(
     Ok(Json(execs))
 }
 
-/// GET /executions/:id — détail + logs des nœuds.
+/// GET /executions/:id - détail + logs des nœuds.
 pub async fn detail(
     State(state): State<AppState>,
     user: FlowUserExt,

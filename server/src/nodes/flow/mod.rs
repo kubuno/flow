@@ -95,7 +95,7 @@ impl crate::nodes::trait_::NodeExecutor for LoopItemsNode {
                 FieldDef::new("workflow_id", "Sous-workflow", FieldType::Expression)
                     .required().placeholder("UUID du workflow à exécuter par élément"),
                 FieldDef::new("items", "Champ tableau", FieldType::Expression)
-                    .placeholder("{{ $json.items }} — vide = l'entrée elle-même"),
+                    .placeholder("{{ $json.items }} - vide = l'entrée elle-même"),
             ],
         }
     }

@@ -76,7 +76,7 @@ export function moduleBackstageSections(
 
 // Rangées clé/valeur d'un panneau d'informations (propriétés ou statistiques).
 export function InfoRows({ rows }: { rows: Array<[string, string | number]> }) {
-  if (!rows.length) return <div className="py-8 text-sm text-text-tertiary">—</div>
+  if (!rows.length) return <div className="py-8 text-sm text-text-tertiary">-</div>
   return (
     <>
       {rows.map(([k, v]) => (

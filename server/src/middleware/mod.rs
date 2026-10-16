@@ -23,7 +23,7 @@ const MODULE_ID: &str = "flow";
 
 /// Authenticate the caller from the signed `X-Kubuno-Auth` token the core
 /// mints with this module's internal secret (see `kubuno-modauth`), instead of
-/// trusting the plain `X-Kubuno-User-*` headers — which any process reaching this
+/// trusting the plain `X-Kubuno-User-*` headers - which any process reaching this
 /// module's loopback port could forge to impersonate any user.
 pub async fn require_auth(
     State(state): State<AppState>,

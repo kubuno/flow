@@ -1,4 +1,4 @@
-//! Supabase node — table operations through the Supabase REST (PostgREST) API.
+//! Supabase node - table operations through the Supabase REST (PostgREST) API.
 //! Uses the outbound HTTP proxy; no DB driver. Credentials/URL are user-provided.
 
 use async_trait::async_trait;

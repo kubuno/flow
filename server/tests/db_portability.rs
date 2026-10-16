@@ -1,5 +1,5 @@
 //! Runs the flow module's own migrations and storage paths against a real
-//! server of **each** engine, from a single compiled binary — the proof that
+//! server of **each** engine, from a single compiled binary - the proof that
 //! the engine is a run-time choice, not a build-time one, and that the ported
 //! pieces (JSON `tags`, the BYTEA credential blobs, the portable job-queue claim
 //! and the dialect upserts) behave identically on all of them.
@@ -118,7 +118,7 @@ async fn run_all(pool: &DbPool) {
     assert_eq!(wf.tags, new_tags);
     assert!(wf.is_starred);
 
-    // COUNT(*) as i64 — the PG-strict int-width path (a literal/COUNT read as i64
+    // COUNT(*) as i64 - the PG-strict int-width path (a literal/COUNT read as i64
     // is where a naive port breaks on PostgreSQL).
     let count: i64 = pool
         .fetch_scalar::<i64>(
@@ -129,7 +129,7 @@ async fn run_all(pool: &DbPool) {
         .expect("count");
     assert_eq!(count, 1);
 
-    // 2) Job queue — enqueue then the rows_affected claim, once and only once.
+    // 2) Job queue - enqueue then the rows_affected claim, once and only once.
     let j1 = queue::enqueue(pool, id, owner, "manual", serde_json::json!({"n": 1}), 3)
         .await
         .expect("enqueue 1");
@@ -145,7 +145,7 @@ async fn run_all(pool: &DbPool) {
     assert!(claimed.iter().any(|j| j.trigger_data.get("n").and_then(|v| v.as_i64()) == Some(1)));
 
     // A second claim finds nothing: the guard (status='pending') made the first
-    // claim exclusive — no SKIP LOCKED anywhere.
+    // claim exclusive - no SKIP LOCKED anywhere.
     let again = queue::claim_batch(pool, "worker-test", 10).await.expect("claim again");
     assert!(again.is_empty(), "already-claimed jobs are not re-claimed");
 
@@ -156,7 +156,7 @@ async fn run_all(pool: &DbPool) {
         .expect("job status");
     assert_eq!(done.as_deref(), Some("done"));
 
-    // 3) Credentials — the encrypted BYTEA/BLOB columns round-trip as bytes.
+    // 3) Credentials - the encrypted BYTEA/BLOB columns round-trip as bytes.
     let cid = new_id();
     let data = vec![0xDEu8, 0xAD, 0xBE, 0xEF, 0x00, 0x11];
     let nonce = vec![1u8; 12];
@@ -180,7 +180,7 @@ async fn run_all(pool: &DbPool) {
     assert_eq!(cred.data, data);
     assert_eq!(cred.nonce, nonce);
 
-    // 4) Dialect upsert — the email-trigger state path (insert, then conflict).
+    // 4) Dialect upsert - the email-trigger state path (insert, then conflict).
     let node_id = "trigger-1";
     let upsert = pool.backend().upsert(
         "flow.email_trigger_state",
@@ -240,7 +240,7 @@ async fn sqlite() {
 #[tokio::test]
 async fn postgres() {
     let Ok(url) = std::env::var("KUBUNO_PG_TEST_URL") else {
-        eprintln!("KUBUNO_PG_TEST_URL non défini — test PostgreSQL ignoré");
+        eprintln!("KUBUNO_PG_TEST_URL non défini - test PostgreSQL ignoré");
         return;
     };
     let mut settings = base_settings("postgres");
@@ -252,7 +252,7 @@ async fn postgres() {
 #[tokio::test]
 async fn mysql() {
     let Ok(url) = std::env::var("KUBUNO_MYSQL_TEST_URL") else {
-        eprintln!("KUBUNO_MYSQL_TEST_URL non défini — test MySQL/MariaDB ignoré");
+        eprintln!("KUBUNO_MYSQL_TEST_URL non défini - test MySQL/MariaDB ignoré");
         return;
     };
     let mut settings = base_settings("mysql");

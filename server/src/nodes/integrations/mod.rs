@@ -49,7 +49,7 @@ impl crate::nodes::trait_::NodeExecutor for ServiceNode {
         NodeMeta {
             node_type: s.type_id.into(),
             name:      s.name.into(),
-            description: format!("Intégration {} — {} opérations", s.name, s.ops.len()),
+            description: format!("Intégration {} - {} opérations", s.name, s.ops.len()),
             category:  NodeCategory::Integration,
             icon:      s.icon.into(),
             color:     s.color.into(),

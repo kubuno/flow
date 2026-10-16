@@ -4,7 +4,7 @@
  * Les types de nœuds n8n/Make ne correspondent pas 1:1 au catalogue Flow : on
  * mappe les plus courants vers leurs équivalents (webhook/cron/http/if/code…) et
  * on retombe sur un nœud `code.js` portant le type + les paramètres d'origine en
- * commentaire pour les autres — l'import sert d'amorce de migration (structure,
+ * commentaire pour les autres - l'import sert d'amorce de migration (structure,
  * positions, noms, liens), à reconfigurer ensuite.
  */
 import type { WorkflowDefinition, WorkflowNode, WorkflowEdge } from './types'
@@ -15,7 +15,7 @@ let _c = 0
 const uid = (p: string) => `${p}_${Date.now().toString(36)}${(_c++).toString(36)}`
 
 function codeFallback(originalType: string, params: unknown): { type: string; config: Record<string, unknown> } {
-  const body = `// Importé — type d'origine : ${originalType}\n// Reconfigurez ce nœud avec un type Flow équivalent.\n// Paramètres d'origine :\n// ${JSON.stringify(params ?? {}, null, 2).replace(/\n/g, '\n// ')}\nreturn items;`
+  const body = `// Importé - type d'origine : ${originalType}\n// Reconfigurez ce nœud avec un type Flow équivalent.\n// Paramètres d'origine :\n// ${JSON.stringify(params ?? {}, null, 2).replace(/\n/g, '\n// ')}\nreturn items;`
   return { type: 'code.js', config: { code: body } }
 }
 

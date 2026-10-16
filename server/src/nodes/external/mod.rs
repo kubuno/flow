@@ -22,7 +22,7 @@ pub struct AiNode;
 impl crate::nodes::trait_::NodeExecutor for AiNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "external.ai".into(), name: "IA — Génération de texte".into(),
+            node_type: "external.ai".into(), name: "IA - Génération de texte".into(),
             description: "Interroge un modèle de langage (Anthropic ou API compatible OpenAI)".into(),
             category: NodeCategory::External, icon: "Sparkles".into(), color: "#8e44ad".into(),
             inputs: 1, outputs: vec![],

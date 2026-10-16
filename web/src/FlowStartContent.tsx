@@ -1,5 +1,5 @@
 import { formatDate } from '@kubuno/sdk'
-// Start content (Accueil) — reused by the home page (ModuleHome) AND by the open
+// Start content (Accueil) - reused by the home page (ModuleHome) AND by the open
 // editor's backstage ("Fichier" tab). Recents + browse + Nouveau/Modèles/Import.
 // Extracted from FlowDashboard so both surfaces share the exact same UI without a
 // circular import between the dashboard and the editor.

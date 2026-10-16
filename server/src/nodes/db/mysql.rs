@@ -1,5 +1,5 @@
 //! MySQL / MariaDB query node. Connects to an EXTERNAL database (credential or
-//! DSN) — never Kubuno's own database. One-shot connection per execution.
+//! DSN) - never Kubuno's own database. One-shot connection per execution.
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -82,7 +82,7 @@ pub struct MySqlQueryNode;
 impl crate::nodes::trait_::NodeExecutor for MySqlQueryNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "db.mysql".into(), name: "MySQL / MariaDB — Requête".into(),
+            node_type: "db.mysql".into(), name: "MySQL / MariaDB - Requête".into(),
             description: "Exécute une requête SQL sur une base MySQL ou MariaDB externe".into(),
             category: NodeCategory::External, icon: "Database".into(), color: "#00758f".into(),
             inputs: 1, outputs: vec![],
@@ -94,7 +94,7 @@ impl crate::nodes::trait_::NodeExecutor for MySqlQueryNode {
                     .placeholder("SELECT * FROM clients WHERE actif = ?")
                     .help("Paramètres positionnels « ? » liés depuis « Paramètres »."),
                 FieldDef::new("params", "Paramètres (JSON tableau)", FieldType::Json)
-                    .help(r#"["valeur1", 42, true] — liés aux « ? » dans l'ordre"#),
+                    .help(r#"["valeur1", 42, true] - liés aux « ? » dans l'ordre"#),
             ],
         }
     }

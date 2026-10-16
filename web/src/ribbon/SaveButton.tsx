@@ -23,7 +23,7 @@ export function SaveButton({ onSave, saving = false, dirty, label }: {
   const disabled = saving || dirty === false
 
   // Badge d'état. Sans signal `dirty` (éditeurs en autosave), on n'a que deux états
-  // réels : « en cours » et « enregistré » — le point clignotant n'apparaît que là où
+  // réels : « en cours » et « enregistré » - le point clignotant n'apparaît que là où
   // un vrai état non-enregistré est remonté. Chaque badge est posé sur une PASTILLE
   // BLANCHE (les rubans ont un fond coloré/sombre → sans elle, les glyphes se noient).
   const badge = saving

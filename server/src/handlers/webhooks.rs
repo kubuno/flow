@@ -26,7 +26,7 @@ fn gen_token() -> String {
     hex::encode(buf)
 }
 
-/// POST /workflows/:id/webhook — crée (ou retourne) un token de webhook pour un nœud.
+/// POST /workflows/:id/webhook - crée (ou retourne) un token de webhook pour un nœud.
 pub async fn register(
     State(state): State<AppState>,
     user: FlowUserExt,
@@ -71,7 +71,7 @@ pub async fn register(
     })))
 }
 
-/// POST|GET /webhook/:token — réception publique d'un webhook (sans auth).
+/// POST|GET /webhook/:token - réception publique d'un webhook (sans auth).
 ///
 /// This is the module's only unauthenticated entry point, so both instance
 /// guards are applied BEFORE the token is even looked up: an instance that

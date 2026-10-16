@@ -1,5 +1,5 @@
 //! Credentials CRUD. Secret values are AES-GCM encrypted at rest and NEVER
-//! returned to the client — list/get expose metadata only.
+//! returned to the client - list/get expose metadata only.
 
 use axum::{
     extract::{Path, State},
@@ -23,7 +23,7 @@ fn key(state: &AppState) -> [u8; 32] {
     crypto::derive_key(&state.settings.core.internal_secret)
 }
 
-/// GET /credential-types — catalogue of credential types (for the frontend).
+/// GET /credential-types - catalogue of credential types (for the frontend).
 pub async fn types() -> Json<Value> {
     Json(json!(credential_catalog()))
 }
@@ -36,7 +36,7 @@ pub struct TestCredentialDto {
     pub data: Value,
 }
 
-/// POST /credentials/test — best-effort live test of a candidate credential
+/// POST /credentials/test - best-effort live test of a candidate credential
 /// (connection / authenticated call). Does not require saving first.
 pub async fn test(
     State(state): State<AppState>,
@@ -47,7 +47,7 @@ pub async fn test(
     Ok(Json(json!({ "ok": r.ok, "message": r.message })))
 }
 
-/// GET /credentials — list the user's credentials (metadata only).
+/// GET /credentials - list the user's credentials (metadata only).
 pub async fn list(State(state): State<AppState>, user: FlowUserExt) -> Result<Json<Vec<CredentialMeta>>> {
     let rows = state.db.fetch_all_as::<Credential>(
         "SELECT * FROM flow.credentials WHERE owner_id = $1 ORDER BY updated_at DESC",
@@ -58,7 +58,7 @@ pub async fn list(State(state): State<AppState>, user: FlowUserExt) -> Result<Js
     Ok(Json(rows.iter().map(CredentialMeta::from).collect()))
 }
 
-/// POST /credentials — create (encrypts the payload).
+/// POST /credentials - create (encrypts the payload).
 pub async fn create(
     State(state): State<AppState>,
     user: FlowUserExt,
@@ -90,7 +90,7 @@ pub async fn create(
     Ok(Json((&row).into()))
 }
 
-/// PUT /credentials/:id — rename and/or replace the secret payload.
+/// PUT /credentials/:id - rename and/or replace the secret payload.
 pub async fn update(
     State(state): State<AppState>,
     user: FlowUserExt,

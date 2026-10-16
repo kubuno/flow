@@ -1,4 +1,4 @@
-# Kubuno Flow — mobile apps
+# Kubuno Flow - mobile apps
 
 Reserved for the mobile clients of the Flow module, organised like the other platforms of this repository:
 

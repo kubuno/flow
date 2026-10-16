@@ -1,5 +1,5 @@
 import { RouteRegistry, CollapseSidebarRegistry, WaffleAppRegistry, FileTypeRegistry, FaviconRegistry, ModuleSettingsRegistry, useToolbarStore, ExtensionRegistry, SDK_VERSION } from '@kubuno/sdk'
-/** Bundle MODULE flow — chargé à l'exécution (cf. vite.module.config). */
+/** Bundle MODULE flow - chargé à l'exécution (cf. vite.module.config). */
 import { lazy } from 'react'
 import './index.css'
 import './i18n'
@@ -11,7 +11,7 @@ export const sdkVersion = SDK_VERSION
 export function register() {
   FaviconRegistry.register('flow', '/flow-logo.png')
 
-  // Type de fichier Kubuno produit par Flow (.kbflw) — filtrage StartPage + icône + ouverture.
+  // Type de fichier Kubuno produit par Flow (.kbflw) - filtrage StartPage + icône + ouverture.
   FileTypeRegistry.register({
     moduleId: 'flow', label: 'Flow', icon: 'Workflow',
     mimeTypes: ['application/vnd.kubuno.flow+json'],

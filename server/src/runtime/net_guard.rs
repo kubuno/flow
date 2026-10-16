@@ -1,4 +1,4 @@
-//! Host-level anti-SSRF guard — the single definition of "an address a workflow
+//! Host-level anti-SSRF guard - the single definition of "an address a workflow
 //! must never reach".
 //!
 //! Flow dials the outside world in two different shapes:
@@ -50,7 +50,7 @@ fn unbracket(host: &str) -> &str {
 }
 
 /// Unconditional address check for one `(host, port)`. Returns every address
-/// the host resolves to — all of them already validated — so the caller can
+/// the host resolves to - all of them already validated - so the caller can
 /// connect to a validated IP rather than to the name.
 ///
 /// This is the whole SSRF policy: no scheme, no URL, nothing HTTP-specific, so
@@ -78,7 +78,7 @@ pub async fn guard_host(host: &str, port: u16) -> Result<Vec<IpAddr>, ProxyError
         return Ok(vec![ip]);
     }
 
-    // Hostname: resolve and refuse if ANY resolved address is internal — a name
+    // Hostname: resolve and refuse if ANY resolved address is internal - a name
     // that answers with one public and one private address is a classic bypass.
     let addrs = tokio::net::lookup_host((host, port))
         .await
@@ -156,7 +156,7 @@ fn refuse_socket_dsn(dsn: &str) -> Result<(), ProxyError> {
     // An unparseable DSN is left to the driver, which reports it precisely.
     let Ok(url) = reqwest::Url::parse(dsn) else { return Ok(()) };
     // A path in the host position (`postgres://%2Fvar%2Frun/db`) is a socket too,
-    // and sqlx keeps its own `host` field — whatever the environment left there —
+    // and sqlx keeps its own `host` field - whatever the environment left there -
     // for the guard to judge.
     if let Some(h) = url.host_str() {
         if h.starts_with('/') || h.to_ascii_lowercase().starts_with("%2f") {
@@ -187,7 +187,7 @@ pub async fn guarded_pg_dsn(
 /// Full egress verdict on a PostgreSQL connect-options set, then a switch to the
 /// validated address so the driver does not resolve the name a second time.
 /// `verify-full` is the one mode that checks the certificate against the host
-/// name, so the name is kept there — at the cost of that second lookup.
+/// name, so the name is kept there - at the cost of that second lookup.
 pub async fn guard_pg_options(
     proxy: &CoreProxy,
     opts: PgConnectOptions,

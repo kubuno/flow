@@ -1,4 +1,4 @@
-// <Ribbon> — ruban façon MS Office, partagé par tous les sous-éditeurs Office.
+// <Ribbon> - ruban façon MS Office, partagé par tous les sous-éditeurs Office.
 // Rendu data-driven depuis `RibbonTab[]` : bande d'onglets (+ onglets contextuels à
 // droite avec liseré coloré) puis, pour l'onglet actif, une rangée de GROUPES (boîte
 // + libellé en bas, séparés par des filets). Les petits items se rangent en colonnes
@@ -19,7 +19,7 @@ const MOBILE_BAR_H = 48   // hauteur de la barre de commandes mobile (en bas)
 
 // Bande d'onglets du ruban, extraite pour pouvoir être rendue soit EN LIGNE au-dessus
 // des groupes (défaut historique), soit DANS LA TOPBAR du WorkspaceShell (`inTopbar` :
-// onglets alignés en bas, fond transparent — la topbar a déjà la couleur de bande).
+// onglets alignés en bas, fond transparent - la topbar a déjà la couleur de bande).
 // Déplacée dans la topbar, la rangée dédiée disparaît → 30px de hauteur gagnés, et le
 // mode recherche (overlay opaque sur la topbar) masque les onglets sans rien décaler.
 export function RibbonTabStrip({ tabs, theme, activeId, onSelect, tabStripActions, inTopbar = false, height, collapsed = false, onToggleCollapsed }: {
@@ -33,7 +33,7 @@ export function RibbonTabStrip({ tabs, theme, activeId, onSelect, tabStripAction
   inTopbar?: boolean
   height?: number          // hauteur explicite en mode topbar (= topbarHeight)
   // Bouton de réduction du ruban : rendu À LA FIN de la bande d'onglets (donc TOUJOURS
-  // visible, y compris replié — plus de « barre fine » sous les onglets).
+  // visible, y compris replié - plus de « barre fine » sous les onglets).
   collapsed?: boolean
   onToggleCollapsed?: () => void
 }) {
@@ -228,7 +228,7 @@ export function Ribbon({ tabs, theme, activeTabId, onTabChange, tabStripActions,
   }, [backstageActive, isMobile, hideTabs])
 
   // ── Version MOBILE : barre de commandes en BAS + palette bottom-sheet ─────────
-  // (le ruban desktop — bande d'onglets + rangée de groupes — n'est pas rendu).
+  // (le ruban desktop - bande d'onglets + rangée de groupes - n'est pas rendu).
   // `tabs` vide (ex. mode LECTURE des documents) → aucune barre : plein écran.
   if (isMobile) {
     return (
@@ -246,7 +246,7 @@ export function Ribbon({ tabs, theme, activeTabId, onTabChange, tabStripActions,
 
   return (
     <div ref={rootRef} style={{ flexShrink: 0, userSelect: 'none' }}>
-      {/* Bande d'onglets (masquée si rendue ailleurs — dans la topbar) */}
+      {/* Bande d'onglets (masquée si rendue ailleurs - dans la topbar) */}
       {!hideTabs && (
         <RibbonTabStrip tabs={visibleTabs} theme={theme} activeId={cur?.id} onSelect={setActive} tabStripActions={tabStripActions} />
       )}
@@ -341,7 +341,7 @@ function RibbonGroupsRow({ groups, theme, height }: { groups: RibbonGroup[]; the
   })
 
   return (
-    // overflow-hidden : plus de barre de défilement — on replie au lieu de défiler.
+    // overflow-hidden : plus de barre de défilement - on replie au lieu de défiler.
     <div ref={rowRef} className="flex items-stretch px-2 overflow-hidden" style={{ height, background: theme.bg, borderBottom: `1px solid ${theme.border}`, fontSize: 11 }}>
       {groups.map((g, i) => {
         const last = i === n - 1
@@ -454,7 +454,7 @@ function RibbonGroupView({ group, theme, last }: { group: RibbonGroup; theme: Wo
 }
 
 // RÈGLE : un item d'1 position (petit bouton / toggle / split à icône) ne peut jamais
-// être sur plus de 3 lignes — on EMPILE ces items en colonnes de 3 MAX, façon Office,
+// être sur plus de 3 lignes - on EMPILE ces items en colonnes de 3 MAX, façon Office,
 // pour ne PAS gaspiller d'espace horizontal. ⚠️ Un SÉPARATEUR n'interrompt PAS
 // l'empilement (sinon il isolerait des colonnes partielles) : il est ignoré au packing.
 // Seuls les composants « larges » (gros bouton `size:'large'`, dropdown, gallery, menu,
@@ -476,12 +476,12 @@ function toColumns(items: RibbonItem[]): RibbonItem[][] {
 
 // Contenu d'un GROS bouton (3 positions verticales), façon Office :
 //  · icône EN HAUT, plus grande que les petits boutons (24 vs 16) ; occupe la 1ʳᵉ position.
-//  · libellé sur 2 lignes MAX, ces 2 lignes TOUJOURS réservées (positions 2 & 3) — hauteur
+//  · libellé sur 2 lignes MAX, ces 2 lignes TOUJOURS réservées (positions 2 & 3) - hauteur
 //    constante quel que soit le libellé.
 //  · bouton à MENU (`chevron`) : le chevron va SUR la 2e ligne si le libellé tient sur 1
 //    ligne, ou À LA FIN de la 2e ligne si le libellé tient sur 2 lignes (mesuré à l'exécution).
 //    Pour un `split`, `chevronOnClick` rend le chevron cliquable (ouvre le menu) sans quitter
-//    l'action principale du bouton — via un <span> pour ne pas imbriquer deux <button>.
+//    l'action principale du bouton - via un <span> pour ne pas imbriquer deux <button>.
 function LargeButtonContent({ icon, label, chevron, chevronOnClick }: {
   icon?: ReactNode
   label?: string
@@ -636,7 +636,7 @@ function RibbonItemView({ item, theme }: { item: RibbonItem; theme: WorkspaceThe
 
 // ── Ruban MOBILE ──────────────────────────────────────────────────────────────
 // Remplace le ruban desktop sous 1024px (façon Google Docs / Office mobile) :
-//  · une BARRE fixe en bas de l'écran — pilule « onglet actif ⌃ » + les commandes
+//  · une BARRE fixe en bas de l'écran - pilule « onglet actif ⌃ » + les commandes
 //    de l'onglet à plat (icônes, défilement horizontal, filets entre groupes) ;
 //  · la pilule ouvre une PALETTE bottom-sheet mi-hauteur : sélecteur d'onglets en
 //    tête (y compris « Fichier »/backstage et les onglets contextuels) puis les
@@ -671,7 +671,7 @@ function MobileRibbon({ tabs, cur, setActive, theme }: {
   // Barre du bas ÉPURÉE : `mobileQuick` du groupe s'il est déclaré (sélection
   // manifeste de l'éditeur, ex. B/I/U du groupe Police custom des documents ;
   // `[]` = groupe absent de la barre), sinon sélection automatique = boutons
-  // d'action à icône (button/toggle/split) — les dropdowns, galeries et
+  // d'action à icône (button/toggle/split) - les dropdowns, galeries et
   // contrôles riches satureraient la rangée ; ils vivent dans la palette.
   const flat: RibbonItem[] = []
   for (const g of cur?.groups ?? []) {
@@ -738,7 +738,7 @@ function MobileRibbon({ tabs, cur, setActive, theme }: {
                 )
               })}
             </div>
-            {/* Groupes de l'onglet actif, empilés — chaque commande est une TUILE
+            {/* Groupes de l'onglet actif, empilés - chaque commande est une TUILE
                 LIBELLÉE (grille 2 colonnes, texte = label ou tooltip) ; les
                 contrôles riches (dropdown/galerie/custom) en rangées pleine
                 largeur, dans l'ordre d'origine du groupe. */}
@@ -761,11 +761,11 @@ function MobileRibbon({ tabs, cur, setActive, theme }: {
 }
 
 // ── Palette : équilibre lisibilité / densité verticale ────────────────────────
-// · Les TOGGLES à icône (gras, alignements, listes… — état visuel, icônes
+// · Les TOGGLES à icône (gras, alignements, listes… - état visuel, icônes
 //   connues) forment des rangées d'icônes COMPACTES (cluster horizontal, façon
 //   Office mobile) → 6-8 commandes par rangée de 36px.
 // · Les ACTIONS (button/split, et toggles sans icône) restent des tuiles
-//   LIBELLÉES (texte = label ?? tooltip) en grille 2 colonnes — c'est là que le
+//   LIBELLÉES (texte = label ?? tooltip) en grille 2 colonnes - c'est là que le
 //   libellé apporte du sens.
 // · Dropdown / galerie / custom : rangées pleine largeur, ordre du groupe
 //   préservé. Les séparateurs sont inutiles (chaque groupe a son en-tête).
@@ -804,7 +804,7 @@ function PaletteGroup({ items, theme, onAction }: { items: RibbonItem[]; theme: 
   )
 }
 
-// Bascule compacte : tuile d'icône 44×36 (le title porte le libellé) — l'état
+// Bascule compacte : tuile d'icône 44×36 (le title porte le libellé) - l'état
 // actif teinté rend la fonction évidente, comme sur le ruban desktop.
 function PaletteToggle({ item, theme }: { item: RibbonItem; theme: WorkspaceTheme }) {
   const tint = /^#[0-9a-fA-F]{6}$/.test(theme.accent)
@@ -845,7 +845,7 @@ function PaletteTile({ item, theme, onAction }: { item: RibbonItem; theme: Works
           item.onClick?.()
           // Une commande exécutée referme la palette (façon Office mobile) : son
           // effet est sur la diapo/le document, cachés derrière la feuille. Les
-          // BASCULES de mise en forme (gras…) restent, elles s'enchaînent —
+          // BASCULES de mise en forme (gras…) restent, elles s'enchaînent -
           // sauf celles marquées `paletteTile` (choix de VUE ou d'OUTIL : on veut
           // s'en servir tout de suite sur le document).
           if (item.kind !== 'toggle' || item.paletteTile) onAction?.()

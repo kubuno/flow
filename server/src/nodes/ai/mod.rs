@@ -1,5 +1,5 @@
 //! AI Agent node and its sub-nodes (n8n-style). The agent has typed sub-input
-//! ports — Model (required), Memory, Tools, Output Parser — fed by sub-nodes that
+//! ports - Model (required), Memory, Tools, Output Parser - fed by sub-nodes that
 //! connect from below. Sub-nodes are pure providers (never run in the main flow);
 //! the executor collects their config under `__sub` and the agent consumes it.
 
@@ -107,7 +107,7 @@ provider_node!(WindowMemory, "ai_memory");
 
 pub struct HttpTool;
 impl HttpTool { pub fn meta_impl() -> NodeMeta { NodeMeta {
-    node_type: "ai.tool.http".into(), name: "Outil — Requête HTTP".into(),
+    node_type: "ai.tool.http".into(), name: "Outil - Requête HTTP".into(),
     description: "Donne à l'agent un outil qui appelle une API HTTP".into(),
     category: NodeCategory::Ai, icon: "Globe".into(), color: "#f9ab00".into(),
     inputs: 0, outputs: vec![],
@@ -122,7 +122,7 @@ provider_node!(HttpTool, "ai_tool");
 
 pub struct WorkflowTool;
 impl WorkflowTool { pub fn meta_impl() -> NodeMeta { NodeMeta {
-    node_type: "ai.tool.workflow".into(), name: "Outil — Workflow".into(),
+    node_type: "ai.tool.workflow".into(), name: "Outil - Workflow".into(),
     description: "Donne à l'agent un outil qui exécute un autre workflow".into(),
     category: NodeCategory::Ai, icon: "Workflow".into(), color: "#7e57c2".into(),
     inputs: 0, outputs: vec![],
@@ -144,7 +144,7 @@ impl StructuredParser { pub fn meta_impl() -> NodeMeta { NodeMeta {
     inputs: 0, outputs: vec![],
     fields: vec![
         FieldDef::new("schema", "Schéma JSON (exemple)", FieldType::Json).required()
-            .help(r#"Ex. {"nom":"texte","age":0} — décrit la forme attendue."#),
+            .help(r#"Ex. {"nom":"texte","age":0} - décrit la forme attendue."#),
     ],
 }}}
 provider_node!(StructuredParser, "ai_outputParser");

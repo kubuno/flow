@@ -1,4 +1,4 @@
-//! Database (SGBD) nodes — operate on an EXTERNAL database whose connection
+//! Database (SGBD) nodes - operate on an EXTERNAL database whose connection
 //! string is supplied by the user in the node config. These nodes never touch
 //! Kubuno's own/shared database: each execution opens a one-shot connection to
 //! the user-provided endpoint and closes it when done.
@@ -46,7 +46,7 @@ fn bind_params<'q>(mut q: PgQuery<'q>, params: &[Value]) -> PgQuery<'q> {
     q
 }
 
-/// Open a connection — from a `postgres` credential (host/user/…) if present,
+/// Open a connection - from a `postgres` credential (host/user/…) if present,
 /// otherwise from the `connection` DSN string.
 ///
 /// The host is entirely user-supplied, so it goes through the egress guard
@@ -93,7 +93,7 @@ pub struct PostgresQueryNode;
 impl crate::nodes::trait_::NodeExecutor for PostgresQueryNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "db.postgres".into(), name: "PostgreSQL — Requête".into(),
+            node_type: "db.postgres".into(), name: "PostgreSQL - Requête".into(),
             description: "Exécute une requête SQL sur une base PostgreSQL externe".into(),
             category: NodeCategory::External, icon: "Database".into(), color: "#336791".into(),
             inputs: 1, outputs: vec![],
@@ -106,7 +106,7 @@ impl crate::nodes::trait_::NodeExecutor for PostgresQueryNode {
                     .placeholder("SELECT * FROM clients WHERE actif = $1")
                     .help("Paramètres positionnels $1, $2… liés depuis « Paramètres »."),
                 FieldDef::new("params", "Paramètres (JSON tableau)", FieldType::Json)
-                    .help(r#"["valeur1", 42, true] — liés à $1, $2, $3"#),
+                    .help(r#"["valeur1", 42, true] - liés à $1, $2, $3"#),
             ],
         }
     }
@@ -159,7 +159,7 @@ pub struct PostgresInsertNode;
 impl crate::nodes::trait_::NodeExecutor for PostgresInsertNode {
     fn meta(&self) -> NodeMeta {
         NodeMeta {
-            node_type: "db.postgres.insert".into(), name: "PostgreSQL — Insérer".into(),
+            node_type: "db.postgres.insert".into(), name: "PostgreSQL - Insérer".into(),
             description: "Insère une ou plusieurs lignes dans une table PostgreSQL".into(),
             category: NodeCategory::External, icon: "DatabaseZap".into(), color: "#336791".into(),
             inputs: 1, outputs: vec![],
