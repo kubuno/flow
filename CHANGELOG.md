@@ -10,6 +10,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 ## [Unreleased]
 
 ### Changed
+- **The ribbon comes from the shared Kubuno UI library.** The module's own copy of the ribbon is replaced by the
+  one of `@kubuno/ui` (0.1.18), shared by every module that has a ribbon. The large buttons get the same 32 px icons as Office.
 
 - **The repository is organised by platform.** The server (its sources, migrations, tests and configuration
   example) moves to `server/` and the web frontend to `web/`, with their history, and `mobile/` is reserved
